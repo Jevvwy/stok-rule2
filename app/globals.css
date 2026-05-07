@@ -1,0 +1,55 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0d0f0e;
+  --surface: #141714;
+  --surface2: #1c1f1c;
+  --border: #2a2f2a;
+  --border2: #3a3f3a;
+  --accent: #00e676;
+  --accent2: #69f0ae;
+  --accent-dim: rgba(0, 230, 118, 0.12);
+  --accent-glow: rgba(0, 230, 118, 0.25);
+  --text: #e8ede8;
+  --text2: #9ba89b;
+  --text3: #5a665a;
+  --danger: #ff5252;
+  --warn: #ffab40;
+  --info: #40c4ff;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: 'IBM Plex Sans', sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+::selection {
+  background: var(--accent-dim);
+  color: var(--accent);
+}

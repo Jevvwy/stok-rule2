@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { processTextToDf } from './parser'
 import styles from './page.module.css'
 
@@ -22,6 +22,95 @@ function fmt(v) {
   return v
 }
 
+function TransactionModal({ item, onClose }) {
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const txs = item.transactions || []
+  const totalIn = txs.reduce((s, t) => s + (t.in || 0), 0)
+  const totalOut = txs.reduce((s, t) => s + (t.out || 0), 0)
+
+  return (
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        {/* Modal header */}
+        <div className={styles.modalHeader}>
+          <div>
+            <div className={styles.modalKode}>{item.kodeBarang}</div>
+            <div className={styles.modalDesc}>{item.deskripsi}</div>
+          </div>
+          <button className={styles.modalClose} onClick={onClose}>✕</button>
+        </div>
+
+        {/* Summary pills */}
+        <div className={styles.modalStats}>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>Saldo Awal</span>
+            <span className={styles.modalStatVal}>{fmt(item.saldoAwal)}</span>
+          </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>Total IN</span>
+            <span className={`${styles.modalStatVal} ${styles.colIn}`}>{fmt(totalIn)}</span>
+          </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>Total OUT</span>
+            <span className={`${styles.modalStatVal} ${styles.colOut}`}>{fmt(totalOut)}</span>
+          </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>Saldo Akhir</span>
+            <span className={`${styles.modalStatVal} ${styles.colSaldo}`}>{fmt(item.saldoAkhir)}</span>
+          </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>Unit</span>
+            <span className={styles.modalStatVal}>{item.unit || '—'}</span>
+          </div>
+        </div>
+
+        {/* Transaction table */}
+        <div className={styles.modalTableWrap}>
+          {txs.length === 0 ? (
+            <div className={styles.modalEmpty}>Tidak ada transaksi untuk item ini</div>
+          ) : (
+            <table className={styles.modalTable}>
+              <thead>
+                <tr>
+                  <th className={styles.mth}>#</th>
+                  <th className={styles.mth}>Tanggal</th>
+                  <th className={styles.mth}>Keterangan</th>
+                  <th className={`${styles.mth} ${styles.alignRight}`}>IN</th>
+                  <th className={`${styles.mth} ${styles.alignRight}`}>OUT</th>
+                  <th className={`${styles.mth} ${styles.alignRight}`}>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {txs.map((t, i) => (
+                  <tr key={i} className={styles.mtr}>
+                    <td className={`${styles.mtd} ${styles.tdNum}`}>{i + 1}</td>
+                    <td className={`${styles.mtd} ${styles.tdDate}`}>{t.date}</td>
+                    <td className={`${styles.mtd} ${styles.tdDescTx}`}>{t.desc || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${t.in > 0 ? styles.colIn : styles.colMuted}`}>
+                      {t.in > 0 ? fmt(t.in) : '—'}
+                    </td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${t.out > 0 ? styles.colOut : styles.colMuted}`}>
+                      {t.out > 0 ? fmt(t.out) : '—'}
+                    </td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${styles.colSaldo}`}>
+                      {fmt(t.saldo)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Home() {
   const [data, setData] = useState(null)
   const [fileName, setFileName] = useState(null)
@@ -31,6 +120,7 @@ export default function Home() {
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
+  const [selectedItem, setSelectedItem] = useState(null)
   const fileRef = useRef()
 
   const processFile = useCallback((file) => {
@@ -56,13 +146,8 @@ export default function Home() {
   const handleDrop = useCallback((e) => {
     e.preventDefault()
     setDragging(false)
-    const file = e.dataTransfer.files[0]
-    processFile(file)
+    processFile(e.dataTransfer.files[0])
   }, [processFile])
-
-  const handleFileChange = (e) => {
-    processFile(e.target.files[0])
-  }
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -113,7 +198,6 @@ export default function Home() {
 
   return (
     <div className={styles.root}>
-      {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerInner}>
           <div className={styles.brand}>
@@ -142,7 +226,6 @@ export default function Home() {
       </header>
 
       <main className={styles.main}>
-        {/* Upload zone */}
         {!data && (
           <div
             className={`${styles.dropzone} ${dragging ? styles.dropzoneActive : ''}`}
@@ -151,25 +234,14 @@ export default function Home() {
             onDrop={handleDrop}
             onClick={() => fileRef.current.click()}
           >
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".txt"
-              style={{ display: 'none' }}
-              onChange={handleFileChange}
-            />
+            <input ref={fileRef} type="file" accept=".txt" style={{ display: 'none' }} onChange={e => processFile(e.target.files[0])} />
             <div className={styles.dropIcon}>⬆</div>
-            <div className={styles.dropTitle}>
-              {loading ? 'Memproses...' : 'Upload File TXT'}
-            </div>
-            <div className={styles.dropSub}>
-              Drag & drop atau klik untuk memilih file
-            </div>
+            <div className={styles.dropTitle}>{loading ? 'Memproses...' : 'Upload File TXT'}</div>
+            <div className={styles.dropSub}>Drag & drop atau klik untuk memilih file</div>
             <div className={styles.dropHint}>.txt — Kartu Stok format</div>
           </div>
         )}
 
-        {/* Controls bar after file loaded */}
         {data && (
           <div className={styles.controlBar}>
             <div className={styles.fileTag}>
@@ -177,24 +249,17 @@ export default function Home() {
               {fileName}
             </div>
             <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={cleanKode}
-                onChange={e => setCleanKode(e.target.checked)}
-              />
+              <input type="checkbox" checked={cleanKode} onChange={e => setCleanKode(e.target.checked)} />
               <span className={styles.toggleTrack} />
               <span className={styles.toggleLabel}>Clean Kode Barang</span>
             </label>
-            <button
-              className={styles.btnReupload}
-              onClick={() => { setData(null); setFileName(null); setSearch('') }}
-            >
+            <button className={styles.btnReupload} onClick={() => { setData(null); setFileName(null); setSearch('') }}>
               ↺ Ganti File
             </button>
+            <div className={styles.clickHint}>💡 Klik baris untuk lihat detail transaksi</div>
           </div>
         )}
 
-        {/* Stats */}
         {stats && (
           <div className={styles.stats}>
             <div className={styles.stat}>
@@ -222,43 +287,32 @@ export default function Home() {
           </div>
         )}
 
-        {/* Table */}
         {data && (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
                 <tr>
                   {COLS.map(col => (
-                    <th
-                      key={col.key}
-                      className={`${styles.th} ${styles['align_' + col.align]}`}
-                      onClick={() => handleSort(col.key)}
-                    >
+                    <th key={col.key} className={`${styles.th} ${styles['align_' + col.align]}`} onClick={() => handleSort(col.key)}>
                       {col.label}
-                      {sortKey === col.key && (
-                        <span className={styles.sortArrow}>
-                          {sortDir === 'asc' ? ' ↑' : ' ↓'}
-                        </span>
-                      )}
+                      {sortKey === col.key && <span className={styles.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</span>}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {sortedData.map((row, i) => (
-                  <tr key={i} className={styles.tr}>
+                  <tr key={i} className={styles.tr} onClick={() => setSelectedItem(row)} title="Klik untuk lihat transaksi">
                     {COLS.map(col => (
-                      <td
-                        key={col.key}
-                        className={[
-                          styles.td,
-                          styles['align_' + col.align],
-                          col.color === 'in' ? styles.tdIn : '',
-                          col.color === 'out' ? styles.tdOut : '',
-                          col.color === 'saldo' ? styles.tdSaldo : '',
-                          col.key === 'hasTx' ? (row[col.key] ? styles.tdYes : styles.tdNo) : '',
-                        ].join(' ')}
-                      >
+                      <td key={col.key} className={[
+                        styles.td,
+                        styles['align_' + col.align],
+                        col.color === 'in' ? styles.tdIn : '',
+                        col.color === 'out' ? styles.tdOut : '',
+                        col.color === 'saldo' ? styles.tdSaldo : '',
+                        col.key === 'hasTx' ? (row[col.key] ? styles.tdYes : styles.tdNo) : '',
+                        col.key === 'kodeBarang' ? styles.tdKode : '',
+                      ].join(' ')}>
                         {fmt(row[col.key])}
                       </td>
                     ))}
@@ -276,6 +330,10 @@ export default function Home() {
       <footer className={styles.footer}>
         Kartu Stok Rule 2 Processor — running saldo method
       </footer>
+
+      {selectedItem && (
+        <TransactionModal item={selectedItem} onClose={() => setSelectedItem(null)} />
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-// parser.js — full column extraction including ADM user/date
+// parser.js — full extraction + H+1 detection for Beli nkl
 
 const TOKEN_NUM_RE = /^[\d\-\(\),\.]+$/
 
@@ -26,15 +26,39 @@ function isValidToken(tok) {
 }
 
 function parseAdm(adm) {
-  if (!adm) return { admUser: '', admTanggal: '' }
+  if (!adm) return { admUser: '', admTanggal: '', admDate: null }
   adm = adm.trim()
-  // Format: LETTERS-DDMM  e.g. DAB-2904
   let m = adm.match(/^([A-Za-z]+)-(\d{2})(\d{2})$/)
-  if (m) return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}` }
-  // Format: NUM--DDMM  e.g. 03--0804
+  if (m) {
+    const dd = parseInt(m[2]), mm = parseInt(m[3])
+    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
+  }
   m = adm.match(/^(\w+)--(\d{2})(\d{2})$/)
-  if (m) return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}` }
-  return { admUser: adm, admTanggal: '' }
+  if (m) {
+    const dd = parseInt(m[2]), mm = parseInt(m[3])
+    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
+  }
+  return { admUser: adm, admTanggal: '', admDay: null, admMonth: null }
+}
+
+// Calculate day difference between tglPO and ADM input date
+// Returns integer: 0 = same day, 1 = H+1, 2 = H+2, etc.
+function calcSelisih(tglPO, admDay, admMonth) {
+  if (!tglPO || admDay == null || admMonth == null) return null
+  const parts = tglPO.split('/')
+  if (parts.length < 3) return null
+  const poDay = parseInt(parts[0])
+  const poMonth = parseInt(parts[1])
+  const poYear = parseInt(parts[2])
+  // Use same year as PO for ADM date (ADM only stores DD/MM)
+  // Handle month rollover: if ADM month < PO month, ADM is next year
+  let admYear = poYear
+  if (admMonth < poMonth) admYear = poYear + 1
+  const poDate = new Date(poYear, poMonth - 1, poDay)
+  const admDate = new Date(admYear, admMonth - 1, admDay)
+  const diffMs = admDate - poDate
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+  return diffDays
 }
 
 export function processTextToDf(text, cleanKode = true) {
@@ -111,7 +135,7 @@ export function processTextToDf(text, cleanKode = true) {
 
       const admMatch = raw.match(/\s+([\w]+-{1,2}\d{4})\s*$/)
       const admRaw = admMatch ? admMatch[1] : ''
-      const { admUser, admTanggal } = parseAdm(admRaw)
+      const { admUser, admTanggal, admDay, admMonth } = parseAdm(admRaw)
 
       const withoutAdm = admMatch ? raw.slice(0, raw.lastIndexOf(admMatch[0])).trim() : raw
 
@@ -138,17 +162,23 @@ export function processTextToDf(text, cleanKode = true) {
         : afterDateTime
 
       const textFields = beforeNums.split(/\s{2,}/).map(s => s.trim()).filter(Boolean)
-
       const noTx     = textFields[0] || ''
       const jenisTrs = textFields[1] || ''
       const kodeCust = textFields[2] || ''
       const noReff   = textFields[3] || ''
       const type     = textFields[4] || ''
 
+      const selisihHari = calcSelisih(tglPO, admDay, admMonth)
+      const isBeliNkl = jenisTrs.toLowerCase().includes('beli nkl')
+      const isLambat = isBeliNkl && selisihHari !== null && selisihHari >= 1
+
       transactions.push({
         tglPO, waktu, noTx, jenisTrs, kodeCust, noReff, type,
         in: qtyIn, out: qtyOut, saldo: SAL,
         admUser, admTanggal, admRaw,
+        selisihHari,
+        isBeliNkl,
+        isLambat,
       })
 
       if (typeof SAL === 'number') lastRunningSaldo = SAL
@@ -157,4 +187,33 @@ export function processTextToDf(text, cleanKode = true) {
 
   if (current) finalizeCurrent()
   return items
+}
+
+// Returns flat list of all "Beli nkl" rows with selisih >= 1
+export function getBeliNklLambat(items) {
+  const rows = []
+  for (const item of items) {
+    for (const t of item.transactions) {
+      if (t.isLambat) {
+        rows.push({
+          kodeBarang: item.kodeBarang,
+          deskripsi: item.deskripsi,
+          unit: item.unit,
+          tglPO: t.tglPO,
+          waktu: t.waktu,
+          noTx: t.noTx,
+          jenisTrs: t.jenisTrs,
+          kodeCust: t.kodeCust,
+          noReff: t.noReff,
+          type: t.type,
+          qty: t.in,
+          saldo: t.saldo,
+          admUser: t.admUser,
+          admTanggal: t.admTanggal,
+          selisihHari: t.selisihHari,
+        })
+      }
+    }
+  }
+  return rows
 }

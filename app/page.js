@@ -36,7 +36,6 @@ function TransactionModal({ item, onClose }) {
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        {/* Modal header */}
         <div className={styles.modalHeader}>
           <div>
             <div className={styles.modalKode}>{item.kodeBarang}</div>
@@ -45,7 +44,6 @@ function TransactionModal({ item, onClose }) {
           <button className={styles.modalClose} onClick={onClose}>✕</button>
         </div>
 
-        {/* Summary pills */}
         <div className={styles.modalStats}>
           <div className={styles.modalStat}>
             <span className={styles.modalStatLabel}>Saldo Awal</span>
@@ -67,9 +65,12 @@ function TransactionModal({ item, onClose }) {
             <span className={styles.modalStatLabel}>Unit</span>
             <span className={styles.modalStatVal}>{item.unit || '—'}</span>
           </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>Transaksi</span>
+            <span className={styles.modalStatVal}>{txs.length}</span>
+          </div>
         </div>
 
-        {/* Transaction table */}
         <div className={styles.modalTableWrap}>
           {txs.length === 0 ? (
             <div className={styles.modalEmpty}>Tidak ada transaksi untuk item ini</div>
@@ -78,28 +79,40 @@ function TransactionModal({ item, onClose }) {
               <thead>
                 <tr>
                   <th className={styles.mth}>#</th>
-                  <th className={styles.mth}>Tanggal</th>
-                  <th className={styles.mth}>Keterangan</th>
+                  <th className={styles.mth}>Tgl PO</th>
+                  <th className={styles.mth}>Waktu</th>
+                  <th className={styles.mth}>No Transaksi</th>
+                  <th className={styles.mth}>Jenis</th>
+                  <th className={styles.mth}>Cust/Supp</th>
+                  <th className={styles.mth}>No Reff</th>
+                  <th className={styles.mth}>Type</th>
                   <th className={`${styles.mth} ${styles.alignRight}`}>IN</th>
                   <th className={`${styles.mth} ${styles.alignRight}`}>OUT</th>
                   <th className={`${styles.mth} ${styles.alignRight}`}>Saldo</th>
+                  <th className={styles.mth}>User ADM</th>
+                  <th className={styles.mth}>Tgl Input</th>
                 </tr>
               </thead>
               <tbody>
                 {txs.map((t, i) => (
-                  <tr key={i} className={styles.mtr}>
+                  <tr key={i} className={`${styles.mtr} ${t.in > 0 ? styles.mtrIn : t.out > 0 ? styles.mtrOut : ''}`}>
                     <td className={`${styles.mtd} ${styles.tdNum}`}>{i + 1}</td>
-                    <td className={`${styles.mtd} ${styles.tdDate}`}>{t.date}</td>
-                    <td className={`${styles.mtd} ${styles.tdDescTx}`}>{t.desc || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdDate}`}>{t.tglPO}</td>
+                    <td className={`${styles.mtd} ${styles.tdTime}`}>{t.waktu || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdNoTx}`}>{t.noTx || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdJenis}`}>{t.jenisTrs || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdCust}`}>{t.kodeCust || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdReff}`}>{t.noReff || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdType}`}>{t.type || '—'}</td>
                     <td className={`${styles.mtd} ${styles.alignRight} ${t.in > 0 ? styles.colIn : styles.colMuted}`}>
                       {t.in > 0 ? fmt(t.in) : '—'}
                     </td>
                     <td className={`${styles.mtd} ${styles.alignRight} ${t.out > 0 ? styles.colOut : styles.colMuted}`}>
                       {t.out > 0 ? fmt(t.out) : '—'}
                     </td>
-                    <td className={`${styles.mtd} ${styles.alignRight} ${styles.colSaldo}`}>
-                      {fmt(t.saldo)}
-                    </td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${styles.colSaldo}`}>{fmt(t.saldo)}</td>
+                    <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{t.admUser || '—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdAdmDate}`}>{t.admTanggal || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -124,29 +137,19 @@ export default function Home() {
   const fileRef = useRef()
 
   const processFile = useCallback((file) => {
-    if (!file || !file.name.endsWith('.txt')) {
-      alert('Harap upload file .txt')
-      return
-    }
-    setLoading(true)
-    setFileName(file.name)
+    if (!file || !file.name.endsWith('.txt')) { alert('Harap upload file .txt'); return }
+    setLoading(true); setFileName(file.name)
     const reader = new FileReader()
     reader.onload = (e) => {
-      try {
-        const result = processTextToDf(e.target.result, cleanKode)
-        setData(result)
-      } catch (err) {
-        alert('Error memproses file: ' + err.message)
-      }
+      try { setData(processTextToDf(e.target.result, cleanKode)) }
+      catch (err) { alert('Error: ' + err.message) }
       setLoading(false)
     }
     reader.readAsText(file, 'utf-8')
   }, [cleanKode])
 
   const handleDrop = useCallback((e) => {
-    e.preventDefault()
-    setDragging(false)
-    processFile(e.dataTransfer.files[0])
+    e.preventDefault(); setDragging(false); processFile(e.dataTransfer.files[0])
   }, [processFile])
 
   const handleSort = (key) => {
@@ -158,14 +161,9 @@ export default function Home() {
     if (!data) return
     const XLSX = await import('xlsx')
     const ws = XLSX.utils.json_to_sheet(data.map(r => ({
-      'Kode Barang': r.kodeBarang,
-      'Deskripsi': r.deskripsi,
-      'Unit': r.unit,
-      'Saldo Awal': r.saldoAwal,
-      'Total IN': r.totalIn,
-      'Total OUT': r.totalOut,
-      'Saldo Akhir': r.saldoAkhir,
-      'Has Transactions': r.hasTx ? 'Ya' : 'Tidak',
+      'Kode Barang': r.kodeBarang, 'Deskripsi': r.deskripsi, 'Unit': r.unit,
+      'Saldo Awal': r.saldoAwal, 'Total IN': r.totalIn, 'Total OUT': r.totalOut,
+      'Saldo Akhir': r.saldoAkhir, 'Has Transactions': r.hasTx ? 'Ya' : 'Tidak',
     })))
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Kartu Stok')
@@ -173,17 +171,14 @@ export default function Home() {
   }
 
   const filteredData = data
-    ? data.filter(r =>
-        !search ||
+    ? data.filter(r => !search ||
         r.kodeBarang.toLowerCase().includes(search.toLowerCase()) ||
-        r.deskripsi.toLowerCase().includes(search.toLowerCase())
-      )
+        r.deskripsi.toLowerCase().includes(search.toLowerCase()))
     : []
 
   const sortedData = sortKey
     ? [...filteredData].sort((a, b) => {
-        const av = a[sortKey] ?? ''
-        const bv = b[sortKey] ?? ''
+        const av = a[sortKey] ?? ''; const bv = b[sortKey] ?? ''
         const cmp = av < bv ? -1 : av > bv ? 1 : 0
         return sortDir === 'asc' ? cmp : -cmp
       })
@@ -210,15 +205,9 @@ export default function Home() {
           <div className={styles.headerActions}>
             {data && (
               <>
-                <input
-                  className={styles.search}
-                  placeholder="Cari kode / deskripsi..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-                <button className={styles.btnExport} onClick={exportExcel}>
-                  ↓ Export Excel
-                </button>
+                <input className={styles.search} placeholder="Cari kode / deskripsi..."
+                  value={search} onChange={e => setSearch(e.target.value)} />
+                <button className={styles.btnExport} onClick={exportExcel}>↓ Export Excel</button>
               </>
             )}
           </div>
@@ -227,14 +216,12 @@ export default function Home() {
 
       <main className={styles.main}>
         {!data && (
-          <div
-            className={`${styles.dropzone} ${dragging ? styles.dropzoneActive : ''}`}
+          <div className={`${styles.dropzone} ${dragging ? styles.dropzoneActive : ''}`}
             onDragOver={e => { e.preventDefault(); setDragging(true) }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => fileRef.current.click()}
-          >
-            <input ref={fileRef} type="file" accept=".txt" style={{ display: 'none' }} onChange={e => processFile(e.target.files[0])} />
+            onDragLeave={() => setDragging(false)} onDrop={handleDrop}
+            onClick={() => fileRef.current.click()}>
+            <input ref={fileRef} type="file" accept=".txt" style={{ display: 'none' }}
+              onChange={e => processFile(e.target.files[0])} />
             <div className={styles.dropIcon}>⬆</div>
             <div className={styles.dropTitle}>{loading ? 'Memproses...' : 'Upload File TXT'}</div>
             <div className={styles.dropSub}>Drag & drop atau klik untuk memilih file</div>
@@ -244,10 +231,7 @@ export default function Home() {
 
         {data && (
           <div className={styles.controlBar}>
-            <div className={styles.fileTag}>
-              <span className={styles.fileTagIcon}>▣</span>
-              {fileName}
-            </div>
+            <div className={styles.fileTag}><span className={styles.fileTagIcon}>▣</span>{fileName}</div>
             <label className={styles.toggle}>
               <input type="checkbox" checked={cleanKode} onChange={e => setCleanKode(e.target.checked)} />
               <span className={styles.toggleTrack} />
@@ -262,28 +246,11 @@ export default function Home() {
 
         {stats && (
           <div className={styles.stats}>
-            <div className={styles.stat}>
-              <div className={styles.statVal}>{stats.items.toLocaleString('id-ID')}</div>
-              <div className={styles.statLabel}>Total Item</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={`${styles.statVal} ${styles.statIn}`}>{stats.totalIn.toLocaleString('id-ID')}</div>
-              <div className={styles.statLabel}>Total IN</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={`${styles.statVal} ${styles.statOut}`}>{stats.totalOut.toLocaleString('id-ID')}</div>
-              <div className={styles.statLabel}>Total OUT</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={styles.statVal}>{stats.withTx.toLocaleString('id-ID')}</div>
-              <div className={styles.statLabel}>Punya Transaksi</div>
-            </div>
-            {search && (
-              <div className={styles.stat}>
-                <div className={styles.statVal}>{sortedData.length.toLocaleString('id-ID')}</div>
-                <div className={styles.statLabel}>Hasil Filter</div>
-              </div>
-            )}
+            <div className={styles.stat}><div className={styles.statVal}>{stats.items.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Total Item</div></div>
+            <div className={styles.stat}><div className={`${styles.statVal} ${styles.statIn}`}>{stats.totalIn.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Total IN</div></div>
+            <div className={styles.stat}><div className={`${styles.statVal} ${styles.statOut}`}>{stats.totalOut.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Total OUT</div></div>
+            <div className={styles.stat}><div className={styles.statVal}>{stats.withTx.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Punya Transaksi</div></div>
+            {search && <div className={styles.stat}><div className={styles.statVal}>{sortedData.length.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Hasil Filter</div></div>}
           </div>
         )}
 
@@ -294,8 +261,7 @@ export default function Home() {
                 <tr>
                   {COLS.map(col => (
                     <th key={col.key} className={`${styles.th} ${styles['align_' + col.align]}`} onClick={() => handleSort(col.key)}>
-                      {col.label}
-                      {sortKey === col.key && <span className={styles.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</span>}
+                      {col.label}{sortKey === col.key && <span className={styles.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</span>}
                     </th>
                   ))}
                 </tr>
@@ -305,8 +271,7 @@ export default function Home() {
                   <tr key={i} className={styles.tr} onClick={() => setSelectedItem(row)} title="Klik untuk lihat transaksi">
                     {COLS.map(col => (
                       <td key={col.key} className={[
-                        styles.td,
-                        styles['align_' + col.align],
+                        styles.td, styles['align_' + col.align],
                         col.color === 'in' ? styles.tdIn : '',
                         col.color === 'out' ? styles.tdOut : '',
                         col.color === 'saldo' ? styles.tdSaldo : '',
@@ -320,20 +285,14 @@ export default function Home() {
                 ))}
               </tbody>
             </table>
-            {sortedData.length === 0 && (
-              <div className={styles.empty}>Tidak ada hasil untuk "{search}"</div>
-            )}
+            {sortedData.length === 0 && <div className={styles.empty}>Tidak ada hasil untuk "{search}"</div>}
           </div>
         )}
       </main>
 
-      <footer className={styles.footer}>
-        Kartu Stok Rule 2 Processor — running saldo method
-      </footer>
+      <footer className={styles.footer}>Kartu Stok Rule 2 Processor — running saldo method</footer>
 
-      {selectedItem && (
-        <TransactionModal item={selectedItem} onClose={() => setSelectedItem(null)} />
-      )}
+      {selectedItem && <TransactionModal item={selectedItem} onClose={() => setSelectedItem(null)} />}
     </div>
   )
 }

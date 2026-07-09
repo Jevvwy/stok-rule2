@@ -1,4 +1,4 @@
-// parser.js — JS port of stok_rule2 Python parser
+// parser.js — JS port of stok_rule2 Python parser (with transaction details)
 
 const TOKEN_NUM_RE = /^[\d\-\(\),\.]+$/
 
@@ -51,9 +51,9 @@ export function processTextToDf(text, cleanKode = true) {
 
     for (const t of transactions) {
       hasTx = true
-      if (typeof t.IN === 'number') totalIn += t.IN
-      if (typeof t.OUT === 'number') totalOut += t.OUT
-      if (typeof t.SALDO === 'number') lastSaldo = t.SALDO
+      if (typeof t.in === 'number') totalIn += t.in
+      if (typeof t.out === 'number') totalOut += t.out
+      if (typeof t.saldo === 'number') lastSaldo = t.saldo
     }
 
     const saldoAwal = current.saldoAwal
@@ -82,11 +82,11 @@ export function processTextToDf(text, cleanKode = true) {
       totalOut: Math.round(totalOut),
       saldoAkhir: Math.round(saldoAkhir !== null ? saldoAkhir : 0),
       hasTx,
+      transactions: transactions.map(t => ({ ...t })),
     })
   }
 
   for (const ln of lines) {
-    // Item header
     if (ln.startsWith('KODE BARANG :')) {
       if (current) finalizeCurrent()
 
@@ -110,7 +110,6 @@ export function processTextToDf(text, cleanKode = true) {
 
     if (!current) continue
 
-    // Saldo awal
     if (ln.trim().startsWith('SALDO AWAL')) {
       const toks = ln.trim().split(/\s+/)
       for (let i = toks.length - 1; i >= 0; i--) {
@@ -123,13 +122,26 @@ export function processTextToDf(text, cleanKode = true) {
       continue
     }
 
-    // Transaction line
     if (/^\d{2}\/\d{2}\/\d{4}/.test(ln.trim())) {
-      // Strip ADM code
+      // Extract date
+      const dateMatch = ln.trim().match(/^(\d{2}\/\d{2}\/\d{4})/)
+      const date = dateMatch ? dateMatch[1] : ''
+
+      // Extract description (text between date and numbers at end)
       const core = ln.trim().replace(/\s+\d{3}-\d{4}$/, '')
       const tail = core.slice(-100)
       const toks = tail.trim().split(/\s+/)
       const nums = toks.filter(isValidToken)
+
+      // Get description text (non-numeric middle part)
+      const afterDate = core.slice(date.length).trim()
+      const descParts = afterDate.split(/\s+/)
+      const descWords = []
+      for (const w of descParts) {
+        if (isValidToken(w)) break
+        descWords.push(w)
+      }
+      const txDesc = descWords.join(' ').trim()
 
       let SAL = null
       if (nums.length >= 1) SAL = normalizeNum(nums[nums.length - 1])
@@ -142,7 +154,7 @@ export function processTextToDf(text, cleanKode = true) {
         else { IN = 0; OUT = 0 }
       }
 
-      transactions.push({ IN, OUT, SALDO: SAL })
+      transactions.push({ date, desc: txDesc, in: IN, out: OUT, saldo: SAL })
       if (typeof SAL === 'number') lastRunningSaldo = SAL
     }
   }

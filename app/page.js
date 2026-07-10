@@ -24,8 +24,9 @@ function fmt(v) {
 
 function selisihBadge(n, hasWeekend) {
   if (n === null || n === undefined || n < 2) return null
-  const weekendTag = hasWeekend ? ' 🏖' : ''
-  if (hasWeekend) return { label: `H+${n}${weekendTag}`, cls: 'badgeWeekend' }
+  // Only H+2 with weekend gets the orange weekend badge
+  // H+3 and above = always red regardless of weekend (lupa input / indikasi fraud)
+  if (n === 2 && hasWeekend) return { label: 'H+2 🏖', cls: 'badgeWeekend' }
   return { label: `H+${n}`, cls: 'badgeDanger' }
 }
 
@@ -151,7 +152,7 @@ function LambatModal({ rows, onClose }) {
       'Saldo': r.saldo,
       'User ADM': r.admUser,
       'Tgl Input ADM': r.admTanggal,
-      'Selisih Hari': `H+${r.selisihHari}`,
+      'Selisih Hari': r.selisihHari === 2 && r.hasWeekend ? 'H+2 (Weekend)' : `H+${r.selisihHari}`,
     }))
     const ws = XLSX.utils.json_to_sheet(wsData)
     // Column widths
@@ -184,12 +185,16 @@ function LambatModal({ rows, onClose }) {
             <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.length}</span>
           </div>
           <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>Ada Weekend 🏖</span>
-            <span className={`${styles.modalStatVal} ${styles.colWarn}`}>{rows.filter(r=>r.hasWeekend).length}</span>
+            <span className={styles.modalStatLabel}>H+2 Weekend 🏖</span>
+            <span className={`${styles.modalStatVal} ${styles.colWarn}`}>{rows.filter(r=>r.selisihHari===2 && r.hasWeekend).length}</span>
           </div>
           <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>Murni Terlambat</span>
-            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>!r.hasWeekend).length}</span>
+            <span className={styles.modalStatLabel}>H+2 Terlambat</span>
+            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>r.selisihHari===2 && !r.hasWeekend).length}</span>
+          </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>H+3 ke atas ⚠</span>
+            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>r.selisihHari>=3).length}</span>
           </div>
           <div className={styles.modalStat}>
             <span className={styles.modalStatLabel}>Total QTY</span>

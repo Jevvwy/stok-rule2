@@ -28,16 +28,28 @@ function isValidToken(tok) {
 function parseAdm(adm) {
   if (!adm) return { admUser: '', admTanggal: '', admDate: null }
   adm = adm.trim()
+
+  // Format 1: LETTERS-DDMM  e.g. DAB-2904
   let m = adm.match(/^([A-Za-z]+)-(\d{2})(\d{2})$/)
   if (m) {
     const dd = parseInt(m[2]), mm = parseInt(m[3])
     return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
   }
+
+  // Format 2: NUM--DDMM  e.g. 03--0804, 01--2904
   m = adm.match(/^(\w+)--(\d{2})(\d{2})$/)
   if (m) {
     const dd = parseInt(m[2]), mm = parseInt(m[3])
     return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
   }
+
+  // Format 3: NUM-DDMM  e.g. 015-1704, 04-0404
+  m = adm.match(/^(\d+)-(\d{2})(\d{2})$/)
+  if (m) {
+    const dd = parseInt(m[2]), mm = parseInt(m[3])
+    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
+  }
+
   return { admUser: adm, admTanggal: '', admDay: null, admMonth: null }
 }
 

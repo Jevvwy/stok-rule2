@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+
+const PASSWORD = 'gasemuatau'
 import { processTextToDf, getBeliNklLambat } from './parser'
 import styles from './page.module.css'
 
@@ -251,6 +253,24 @@ function LambatModal({ rows, onClose }) {
 }
 
 export default function Home() {
+  const [authed, setAuthed] = useState(() => {
+    if (typeof window !== 'undefined') return sessionStorage.getItem('stok_auth') === '1'
+    return false
+  })
+  const [pwInput, setPwInput] = useState('')
+  const [pwError, setPwError] = useState(false)
+
+  const handleLogin = () => {
+    if (pwInput === PASSWORD) {
+      sessionStorage.setItem('stok_auth', '1')
+      setAuthed(true)
+      setPwError(false)
+    } else {
+      setPwError(true)
+      setPwInput('')
+    }
+  }
+
   const [data, setData] = useState(null)
   const [fileName, setFileName] = useState(null)
   const [cleanKode, setCleanKode] = useState(true)
@@ -319,6 +339,29 @@ export default function Home() {
     totalOut: data.reduce((s, r) => s + (r.totalOut || 0), 0),
     withTx: data.filter(r => r.hasTx).length,
   } : null
+
+  if (!authed) {
+    return (
+      <div className={styles.loginPage}>
+        <div className={styles.loginBox}>
+          <div className={styles.loginIcon}>▣</div>
+          <div className={styles.loginTitle}>Kartu Stok</div>
+          <div className={styles.loginSub}>Rule 2 Processor</div>
+          <input
+            className={`${styles.loginInput} ${pwError ? styles.loginInputError : ''}`}
+            type="password"
+            placeholder="Masukkan password..."
+            value={pwInput}
+            onChange={e => { setPwInput(e.target.value); setPwError(false) }}
+            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            autoFocus
+          />
+          {pwError && <div className={styles.loginError}>Password salah. Coba lagi.</div>}
+          <button className={styles.loginBtn} onClick={handleLogin}>Masuk →</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.root}>

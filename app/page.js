@@ -22,10 +22,10 @@ function fmt(v) {
   return v
 }
 
-function selisihBadge(n) {
-  if (n === null || n === undefined) return null
-  if (n === 0) return { label: 'H+0', cls: 'badgeOk' }
-  if (n === 1) return { label: 'H+1', cls: 'badgeWarn' }
+function selisihBadge(n, hasWeekend) {
+  if (n === null || n === undefined || n < 2) return null
+  const weekendTag = hasWeekend ? ' 🏖' : ''
+  if (hasWeekend) return { label: `H+${n}${weekendTag}`, cls: 'badgeWeekend' }
   return { label: `H+${n}`, cls: 'badgeDanger' }
 }
 
@@ -92,7 +92,7 @@ function TransactionModal({ item, onClose }) {
               </thead>
               <tbody>
                 {txs.map((t, i) => {
-                  const badge = selisihBadge(t.isBeliNkl ? t.selisihHari : null)
+                  const badge = selisihBadge(t.isBeliNkl ? t.selisihHari : null, t.admHasWeekend)
                   return (
                     <tr key={i} className={[
                       styles.mtr,
@@ -184,12 +184,12 @@ function LambatModal({ rows, onClose }) {
             <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.length}</span>
           </div>
           <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>H+1</span>
-            <span className={`${styles.modalStatVal} ${styles.colWarn}`}>{rows.filter(r=>r.selisihHari===1).length}</span>
+            <span className={styles.modalStatLabel}>Ada Weekend 🏖</span>
+            <span className={`${styles.modalStatVal} ${styles.colWarn}`}>{rows.filter(r=>r.hasWeekend).length}</span>
           </div>
           <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>H+2 atau lebih</span>
-            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>r.selisihHari>=2).length}</span>
+            <span className={styles.modalStatLabel}>Murni Terlambat</span>
+            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>!r.hasWeekend).length}</span>
           </div>
           <div className={styles.modalStat}>
             <span className={styles.modalStatLabel}>Total QTY</span>
@@ -219,7 +219,7 @@ function LambatModal({ rows, onClose }) {
               </thead>
               <tbody>
                 {rows.map((r, i) => {
-                  const badge = selisihBadge(r.selisihHari)
+                  const badge = selisihBadge(r.selisihHari, r.hasWeekend)
                   return (
                     <tr key={i} className={`${styles.mtr} ${styles.mtrLambat}`}>
                       <td className={`${styles.mtd} ${styles.tdNum}`}>{i + 1}</td>

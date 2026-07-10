@@ -83,6 +83,7 @@
 .badgeOk { background: rgba(0,230,118,0.15); color: var(--accent); border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
 .badgeWarn { background: rgba(255,171,64,0.15); color: var(--warn); border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
 .badgeDanger { background: rgba(255,82,82,0.18); color: var(--danger); border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
+.badgeWeekend { background: rgba(255,171,64,0.18); color: var(--warn); border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 700; border: 1px dashed rgba(255,171,64,0.5); }
 
 /* Modal */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; animation: fadeIn 0.15s ease; }

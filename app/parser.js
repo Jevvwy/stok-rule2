@@ -53,24 +53,32 @@ function parseAdm(adm) {
   return { admUser: adm, admTanggal: '', admDay: null, admMonth: null }
 }
 
-// Calculate day difference between tglPO and ADM input date
-// Returns integer: 0 = same day, 1 = H+1, 2 = H+2, etc.
+// Calculate day difference and weekend info between tglPO and ADM input date
 function calcSelisih(tglPO, admDay, admMonth) {
-  if (!tglPO || admDay == null || admMonth == null) return null
+  if (!tglPO || admDay == null || admMonth == null) return { days: null, hasWeekend: false }
   const parts = tglPO.split('/')
-  if (parts.length < 3) return null
+  if (parts.length < 3) return { days: null, hasWeekend: false }
   const poDay = parseInt(parts[0])
   const poMonth = parseInt(parts[1])
   const poYear = parseInt(parts[2])
-  // Use same year as PO for ADM date (ADM only stores DD/MM)
-  // Handle month rollover: if ADM month < PO month, ADM is next year
   let admYear = poYear
   if (admMonth < poMonth) admYear = poYear + 1
   const poDate = new Date(poYear, poMonth - 1, poDay)
   const admDate = new Date(admYear, admMonth - 1, admDay)
-  const diffMs = admDate - poDate
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
-  return diffDays
+  const diffDays = Math.round((admDate - poDate) / (1000 * 60 * 60 * 24))
+
+  // Check if PO day itself OR any day in between is Sat(6) or Sun(0)
+  let hasWeekend = (poDate.getDay() === 0 || poDate.getDay() === 6)
+  if (!hasWeekend) {
+    let d = new Date(poDate)
+    d.setDate(d.getDate() + 1)
+    while (d < admDate) {
+      if (d.getDay() === 0 || d.getDay() === 6) { hasWeekend = true; break }
+      d.setDate(d.getDate() + 1)
+    }
+  }
+
+  return { days: diffDays, hasWeekend }
 }
 
 export function processTextToDf(text, cleanKode = true) {
@@ -180,15 +188,18 @@ export function processTextToDf(text, cleanKode = true) {
       const noReff   = textFields[3] || ''
       const type     = textFields[4] || ''
 
-      const selisihHari = calcSelisih(tglPO, admDay, admMonth)
+      const { days: selisihHari, hasWeekend: admHasWeekend } = calcSelisih(tglPO, admDay, admMonth)
       const isBeliNkl = jenisTrs.toLowerCase().includes('beli nkl')
-      const isLambat = isBeliNkl && selisihHari !== null && selisihHari >= 1
+      // Lambat = H+2 or more. H+1 is acceptable.
+      // If weekend falls between PO and input date, flag with hasWeekend marker but still show it
+      const isLambat = isBeliNkl && selisihHari !== null && selisihHari >= 2
 
       transactions.push({
         tglPO, waktu, noTx, jenisTrs, kodeCust, noReff, type,
         in: qtyIn, out: qtyOut, saldo: SAL,
         admUser, admTanggal, admRaw,
         selisihHari,
+        admHasWeekend,
         isBeliNkl,
         isLambat,
       })
@@ -201,7 +212,7 @@ export function processTextToDf(text, cleanKode = true) {
   return items
 }
 
-// Returns flat list of all "Beli nkl" rows with selisih >= 1
+// Returns flat list of all "Beli nkl" rows with selisih >= 2
 export function getBeliNklLambat(items) {
   const rows = []
   for (const item of items) {
@@ -223,6 +234,7 @@ export function getBeliNklLambat(items) {
           admUser: t.admUser,
           admTanggal: t.admTanggal,
           selisihHari: t.selisihHari,
+          hasWeekend: t.admHasWeekend,
         })
       }
     }

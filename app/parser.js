@@ -226,12 +226,14 @@ export function processTextToDf(text, cleanKode = true) {
       const isBeliNkl = jenisTrs.toLowerCase().includes('beli nkl')
       const isLambat = isBeliNkl && selisihHari !== null && selisihHari >= 2
       const isBpbRj = type === 'BPB/R.j' || type === 'BPB/R.J'
+      // BPB/R.j dengan IN & OUT kosong = transaksi batal (barang tidak ada / customer ganti barang)
+      const isBpbRjBatal = isBpbRj && qtyIn === 0 && qtyOut === 0
 
       transactions.push({
         tglPO, waktu, noTx, jenisTrs, kodeCust, noReff, type,
         in: qtyIn, out: qtyOut, saldo: SAL,
         admUser, admTanggal, admRaw: admUser ? `${admUser}-${admTanggal}` : '',
-        selisihHari, admHasWeekend, isBeliNkl, isLambat, isBpbRj,
+        selisihHari, admHasWeekend, isBeliNkl, isLambat, isBpbRj, isBpbRjBatal,
       })
 
       if (typeof SAL === 'number') lastRunningSaldo = SAL
@@ -292,22 +294,26 @@ export function getAdjAnalysis(items) {
     for (const t of item.transactions) {
       const isBpbRj = t.type === 'BPB/R.j' || t.type === 'BPB/R.J'
       const isAdjMin = t.jenisTrs.toLowerCase().includes('adj min nkl') || t.jenisTrs.toLowerCase().includes('adj min')
-      if (isBpbRj) map[key].bpbRjList.push({ tglPO: t.tglPO, noTx: t.noTx, kodeCust: t.kodeCust, noReff: t.noReff, qtyOut: t.out, qtyIn: t.in, admUser: t.admUser, admTanggal: t.admTanggal })
+      if (isBpbRj) map[key].bpbRjList.push({ tglPO: t.tglPO, noTx: t.noTx, kodeCust: t.kodeCust, noReff: t.noReff, qtyOut: t.out, qtyIn: t.in, admUser: t.admUser, admTanggal: t.admTanggal, batal: t.isBpbRjBatal })
       if (isAdjMin) map[key].adjMinList.push({ tglPO: t.tglPO, noTx: t.noTx, noReff: t.noReff, qtyOut: t.out, qtyIn: t.in, admUser: t.admUser, admTanggal: t.admTanggal })
     }
   }
   // Only return items that have at least one BPB/R.j or ADJ(-)
   return Object.values(map)
     .filter(r => r.bpbRjList.length > 0 || r.adjMinList.length > 0)
-    .map(r => ({
-      ...r,
-      status: r.bpbRjList.length > 0 && r.adjMinList.length === 0 ? 'NO_ADJ'
-             : r.bpbRjList.length === 0 && r.adjMinList.length > 0 ? 'ADJ_ONLY'
-             : 'BOTH',
-    }))
+    .map(r => {
+      // Batal (IN & OUT kosong) tidak dihitung untuk status — tidak butuh ADJ(-)
+      const activeBpb = r.bpbRjList.filter(t => !t.batal).length
+      const batalBpb = r.bpbRjList.filter(t => t.batal).length
+      let status
+      if (activeBpb > 0 && r.adjMinList.length === 0) status = 'NO_ADJ'
+      else if (activeBpb > 0 && r.adjMinList.length > 0) status = 'BOTH'
+      else if (r.adjMinList.length > 0) status = 'ADJ_ONLY'
+      else status = 'BATAL_ONLY' // hanya BPB/R.j batal, tidak ada ADJ — wajar
+      return { ...r, activeBpb, batalBpb, status }
+    })
     .sort((a, b) => {
-      // NO_ADJ first (most suspicious), then BOTH, then ADJ_ONLY
-      const order = { NO_ADJ: 0, BOTH: 1, ADJ_ONLY: 2 }
+      const order = { NO_ADJ: 0, BOTH: 1, ADJ_ONLY: 2, BATAL_ONLY: 3 }
       return order[a.status] - order[b.status]
     })
 }
@@ -324,6 +330,7 @@ export function getBpbRj(items) {
           kodeCust: t.kodeCust, noReff: t.noReff, type: t.type,
           qtyIn: t.in, qtyOut: t.out, saldo: t.saldo,
           admUser: t.admUser, admTanggal: t.admTanggal,
+          batal: t.isBpbRjBatal,
         })
       }
     }

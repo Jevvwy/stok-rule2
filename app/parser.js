@@ -10,6 +10,13 @@ function normalizeNum(s) {
   if (s.startsWith('(') && s.endsWith(')')) { neg = true; s = s.slice(1, -1) }
   s = s.replace(/\s/g, '').replace(/,/g, '').replace(/[^0-9.\-]/g, '')
   if (s === '' || s === '-') return null
+
+  // Handle dot as THOUSAND separator (Indonesian format): 1.000, 12.345, 1.234.567
+  // Pattern: groups of exactly 3 digits after each dot = thousand separator, strip dots
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+    s = s.replace(/\./g, '')
+  }
+
   let v
   try {
     v = s.includes('.') ? parseFloat(s) : parseInt(s, 10)

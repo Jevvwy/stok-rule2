@@ -255,6 +255,56 @@ export function getBeliNklLambat(items) {
   return rows
 }
 
+// Returns flat list of all Adj Min nkl (ADJ-) transactions
+export function getAdjMin(items) {
+  const rows = []
+  for (const item of items) {
+    for (const t of item.transactions) {
+      const isAdjMin = t.jenisTrs.toLowerCase().includes('adj min nkl') || 
+                       t.jenisTrs.toLowerCase().includes('adj min')
+      if (isAdjMin) {
+        rows.push({
+          kodeBarang: item.kodeBarang, deskripsi: item.deskripsi, unit: item.unit,
+          tglPO: t.tglPO, waktu: t.waktu, noTx: t.noTx, jenisTrs: t.jenisTrs,
+          noReff: t.noReff, type: t.type,
+          qtyIn: t.in, qtyOut: t.out, saldo: t.saldo,
+          admUser: t.admUser, admTanggal: t.admTanggal,
+        })
+      }
+    }
+  }
+  return rows
+}
+
+// Returns analysis: per kode barang, match BPB/R.j vs ADJ(-) 
+export function getAdjAnalysis(items) {
+  const map = {}
+  for (const item of items) {
+    const key = item.kodeBarang
+    if (!map[key]) map[key] = { kodeBarang: key, deskripsi: item.deskripsi, unit: item.unit, bpbRjList: [], adjMinList: [] }
+    for (const t of item.transactions) {
+      const isBpbRj = t.type === 'BPB/R.j' || t.type === 'BPB/R.J'
+      const isAdjMin = t.jenisTrs.toLowerCase().includes('adj min nkl') || t.jenisTrs.toLowerCase().includes('adj min')
+      if (isBpbRj) map[key].bpbRjList.push({ tglPO: t.tglPO, noTx: t.noTx, kodeCust: t.kodeCust, noReff: t.noReff, qtyOut: t.out, qtyIn: t.in, admUser: t.admUser, admTanggal: t.admTanggal })
+      if (isAdjMin) map[key].adjMinList.push({ tglPO: t.tglPO, noTx: t.noTx, noReff: t.noReff, qtyOut: t.out, qtyIn: t.in, admUser: t.admUser, admTanggal: t.admTanggal })
+    }
+  }
+  // Only return items that have at least one BPB/R.j or ADJ(-)
+  return Object.values(map)
+    .filter(r => r.bpbRjList.length > 0 || r.adjMinList.length > 0)
+    .map(r => ({
+      ...r,
+      status: r.bpbRjList.length > 0 && r.adjMinList.length === 0 ? 'NO_ADJ'
+             : r.bpbRjList.length === 0 && r.adjMinList.length > 0 ? 'ADJ_ONLY'
+             : 'BOTH',
+    }))
+    .sort((a, b) => {
+      // NO_ADJ first (most suspicious), then BOTH, then ADJ_ONLY
+      const order = { NO_ADJ: 0, BOTH: 1, ADJ_ONLY: 2 }
+      return order[a.status] - order[b.status]
+    })
+}
+
 // Returns flat list of all BPB/R.j transactions
 export function getBpbRj(items) {
   const rows = []

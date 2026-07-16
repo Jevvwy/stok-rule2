@@ -68,6 +68,7 @@ function AdjDashboard({ analysis, soMap, onClose }) {
   const noAdj = analysis.filter(r => r.status === 'NO_ADJ')
   const both = analysis.filter(r => r.status === 'BOTH')
   const adjOnly = analysis.filter(r => r.status === 'ADJ_ONLY')
+  const batalOnly = analysis.filter(r => r.status === 'BATAL_ONLY')
 
   const filtered = analysis.filter(r => {
     if (filter !== 'ALL' && r.status !== filter) return false
@@ -162,6 +163,11 @@ function AdjDashboard({ analysis, soMap, onClose }) {
             <span className={`${styles.modalStatVal} ${styles.colWarn}`}>{adjOnly.length}</span>
             <span className={styles.modalStatSub}>Perlu dicek</span>
           </div>
+          <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>{setFilter('BATAL_ONLY');setSelected(null)}}>
+            <span className={styles.modalStatLabel}>Hanya Batal/Ganti</span>
+            <span className={`${styles.modalStatVal}`} style={{color:'var(--text3)'}}>{batalOnly.length}</span>
+            <span className={styles.modalStatSub}>Wajar</span>
+          </div>
           <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>{setFilter('ALL');setSelected(null)}}>
             <span className={styles.modalStatLabel}>Total Item</span>
             <span className={styles.modalStatVal}>{analysis.length}</span>
@@ -174,7 +180,7 @@ function AdjDashboard({ analysis, soMap, onClose }) {
           <div className={styles.dashLeft}>
             <div className={styles.dashLeftHeader}>
               <div className={styles.filterTabs}>
-                {[['ALL','Semua'],['NO_ADJ','⚠ Tidak Ada'],['BOTH','✓ Keduanya'],['ADJ_ONLY','ADJ Only']].map(([k,l]) => (
+                {[['ALL','Semua'],['NO_ADJ','⚠ Tidak Ada'],['BOTH','✓ Keduanya'],['ADJ_ONLY','ADJ Only'],['BATAL_ONLY','Batal/Ganti']].map(([k,l]) => (
                   <button key={k} className={`${styles.filterTab} ${filter===k?styles.filterTabActive:''} ${k==='NO_ADJ'?styles.filterTabDanger:''}`}
                     onClick={()=>{setFilter(k);setSelected(null)}}>{l}</button>
                 ))}
@@ -189,17 +195,18 @@ function AdjDashboard({ analysis, soMap, onClose }) {
                   className={`${styles.custCard} ${selected===r.kodeBarang?styles.custCardActive:''} ${r.status==='NO_ADJ'?styles.custCardHigh:r.status==='BOTH'?styles.custCardOk:''}`}
                   onClick={() => setSelected(r.kodeBarang)}>
                   <div className={styles.custCardTop}>
-                    <div className={styles.adjStatusDot} style={{background: r.status==='NO_ADJ'?'var(--danger)':r.status==='BOTH'?'var(--accent)':'var(--warn)'}} />
+                    <div className={styles.adjStatusDot} style={{background: r.status==='NO_ADJ'?'var(--danger)':r.status==='BOTH'?'var(--accent)':r.status==='BATAL_ONLY'?'var(--text3)':'var(--warn)'}} />
                     <div className={styles.custKode} style={{fontSize:'11px'}}>{r.kodeBarang}</div>
                   </div>
                   <div className={styles.adjItemDesc}>{r.deskripsi}</div>
                   <div className={styles.custCardStats}>
-                    <span className={styles.custStat}><span className={`${styles.custStatNum} ${styles.colWarn}`}>{r.bpbRjList.length}</span> BPB/R.j</span>
+                    <span className={styles.custStat}><span className={`${styles.custStatNum} ${styles.colWarn}`}>{r.activeBpb}</span> BPB/R.j{r.batalBpb>0&&<span style={{color:'var(--text3)'}}> (+{r.batalBpb} batal)</span>}</span>
                     <span className={styles.custStat}><span className={`${styles.custStatNum} ${r.adjMinList.length>0?styles.colIn:styles.colDanger}`}>{r.adjMinList.length}</span> ADJ(-)</span>
                     {soMap && soMap[r.kodeBarang] && <span className={styles.custStat}><span className={styles.custStatNum} style={{color:'var(--info)'}}>{soMap[r.kodeBarang].length}</span> SO</span>}
                     {r.status==='NO_ADJ' && <span className={styles.badgeDanger}>Tidak ada ADJ</span>}
                     {r.status==='BOTH' && <span className={styles.badgeOk}>Ada ADJ</span>}
                     {r.status==='ADJ_ONLY' && <span className={styles.badgeWarn}>ADJ only</span>}
+                    {r.status==='BATAL_ONLY' && <span className={styles.badgeMuted}>Batal/Ganti</span>}
                   </div>
                 </div>
               ))}
@@ -223,8 +230,8 @@ function AdjDashboard({ analysis, soMap, onClose }) {
               <>
                 <div className={styles.custDetailHeader}>
                   <div>
-                    <div className={styles.custDetailKode} style={{color: selectedItem.status==='NO_ADJ'?'var(--danger)':selectedItem.status==='BOTH'?'var(--accent)':'var(--warn)'}}>
-                      {selectedItem.status==='NO_ADJ'?'⚠':selectedItem.status==='BOTH'?'✓':'📋'} {selectedItem.kodeBarang}
+                    <div className={styles.custDetailKode} style={{color: selectedItem.status==='NO_ADJ'?'var(--danger)':selectedItem.status==='BOTH'?'var(--accent)':selectedItem.status==='BATAL_ONLY'?'var(--text3)':'var(--warn)'}}>
+                      {selectedItem.status==='NO_ADJ'?'⚠':selectedItem.status==='BOTH'?'✓':selectedItem.status==='BATAL_ONLY'?'⊘':'📋'} {selectedItem.kodeBarang}
                     </div>
                     <div className={styles.custDetailSub}>{selectedItem.deskripsi} · {selectedItem.unit}</div>
                   </div>
@@ -236,8 +243,8 @@ function AdjDashboard({ analysis, soMap, onClose }) {
                   <div className={styles.modalStat}><span className={styles.modalStatLabel}>ADJ(-)</span><span className={`${styles.modalStatVal} ${selectedItem.adjMinList.length>0?styles.colIn:styles.colDanger}`}>{selectedItem.adjMinList.length}</span></div>
                   <div className={styles.modalStat}>
                     <span className={styles.modalStatLabel}>Status</span>
-                    <span className={`${styles.modalStatVal}`} style={{fontSize:'13px',color:selectedItem.status==='NO_ADJ'?'var(--danger)':selectedItem.status==='BOTH'?'var(--accent)':'var(--warn)'}}>
-                      {selectedItem.status==='NO_ADJ'?'⚠ Tidak ada ADJ(-)':selectedItem.status==='BOTH'?'✓ Ada keduanya':'ADJ(-) tanpa BPB/R.j'}
+                    <span className={`${styles.modalStatVal}`} style={{fontSize:'13px',color:selectedItem.status==='NO_ADJ'?'var(--danger)':selectedItem.status==='BOTH'?'var(--accent)':selectedItem.status==='BATAL_ONLY'?'var(--text3)':'var(--warn)'}}>
+                      {selectedItem.status==='NO_ADJ'?'⚠ Tidak ada ADJ(-)':selectedItem.status==='BOTH'?'✓ Ada keduanya':selectedItem.status==='BATAL_ONLY'?'⊘ Semua batal/ganti barang':'ADJ(-) tanpa BPB/R.j'}
                     </span>
                   </div>
                 </div>
@@ -340,7 +347,7 @@ function AdjDashboard({ analysis, soMap, onClose }) {
                         <tr key={i} className={`${styles.mtr} ${e.kind==='bpb'?styles.mtrBpbRj:styles.mtrAdj}`}>
                           <td className={styles.mtd}>
                             {e.kind==='bpb'
-                              ? <span className={styles.tlBadgeBpb}>BPB/R.j</span>
+                              ? (e.batal ? <span className={styles.tlBadgeBatal}>BPB/R.j ⊘ Batal</span> : <span className={styles.tlBadgeBpb}>BPB/R.j</span>)
                               : <span className={styles.tlBadgeAdj}>ADJ(-)</span>}
                           </td>
                           <td className={`${styles.mtd} ${styles.tdDate}`}>{e.tglPO}</td>
@@ -379,8 +386,9 @@ function BpbRjDashboard({ rows, onClose }) {
   const custMap = {}
   for (const r of rows) {
     const c = r.kodeCust || '(kosong)'
-    if (!custMap[c]) custMap[c] = { kodeCust: c, count: 0, totalOut: 0, totalIn: 0, transactions: [] }
+    if (!custMap[c]) custMap[c] = { kodeCust: c, count: 0, batalCount: 0, totalOut: 0, totalIn: 0, transactions: [] }
     custMap[c].count++; custMap[c].totalOut += r.qtyOut||0; custMap[c].totalIn += r.qtyIn||0
+    if (r.batal) custMap[c].batalCount++
     custMap[c].transactions.push(r)
   }
   const custList = Object.values(custMap).sort((a,b)=>sortBy==='count'?b.count-a.count:b.totalOut-a.totalOut)
@@ -400,7 +408,7 @@ function BpbRjDashboard({ rows, onClose }) {
 
   const exportCust = async (cust) => {
     const XLSX = await import('xlsx')
-    const ws = XLSX.utils.json_to_sheet(cust.transactions.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Tgl PO':r.tglPO,'No Transaksi':r.noTx,'Cust/Supp':r.kodeCust,'No Reff':r.noReff,'QTY OUT':r.qtyOut||0,'QTY IN':r.qtyIn||0,'Saldo':r.saldo,'User ADM':r.admUser,'Tgl Input':r.admTanggal})))
+    const ws = XLSX.utils.json_to_sheet(cust.transactions.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Tgl PO':r.tglPO,'No Transaksi':r.noTx,'Cust/Supp':r.kodeCust,'No Reff':r.noReff,'QTY OUT':r.qtyOut||0,'QTY IN':r.qtyIn||0,'Saldo':r.saldo,'User ADM':r.admUser,'Tgl Input':r.admTanggal,'Status':r.batal?'Batal/Ganti Barang':'Aktif'})))
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,`BPB-RJ ${cust.kodeCust}`)
     XLSX.writeFile(wb,`bpb_rj_${cust.kodeCust}_${Date.now()}.xlsx`)
   }
@@ -409,7 +417,7 @@ function BpbRjDashboard({ rows, onClose }) {
     const XLSX = await import('xlsx')
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(custList.map(c=>({'Kode Customer':c.kodeCust,'Jumlah BPB/R.j':c.count,'Total QTY OUT':c.totalOut,'Total QTY IN':c.totalIn}))),'Summary per Customer')
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Tgl PO':r.tglPO,'No Transaksi':r.noTx,'Cust/Supp':r.kodeCust,'No Reff':r.noReff,'QTY OUT':r.qtyOut||0,'QTY IN':r.qtyIn||0,'Saldo':r.saldo,'User ADM':r.admUser,'Tgl Input':r.admTanggal}))),'Semua BPB-RJ')
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Tgl PO':r.tglPO,'No Transaksi':r.noTx,'Cust/Supp':r.kodeCust,'No Reff':r.noReff,'QTY OUT':r.qtyOut||0,'QTY IN':r.qtyIn||0,'Saldo':r.saldo,'User ADM':r.admUser,'Tgl Input':r.admTanggal,'Status':r.batal?'Batal/Ganti Barang':'Aktif'}))),'Semua BPB-RJ')
     XLSX.writeFile(wb,`bpb_rj_dashboard_${Date.now()}.xlsx`)
   }
 
@@ -442,7 +450,7 @@ function BpbRjDashboard({ rows, onClose }) {
                     {c.count>=3&&c.count<5&&<span className={styles.badgeWarn}>Perhatian</span>}
                   </div>
                   <div className={styles.custCardStats}>
-                    <span className={styles.custStat}><span className={styles.custStatNum}>{c.count}</span>x</span>
+                    <span className={styles.custStat}><span className={styles.custStatNum}>{c.count}</span>x{c.batalCount>0&&<span style={{color:'var(--text3)'}}> ({c.batalCount} batal)</span>}</span>
                     <span className={styles.custStat}><span className={`${styles.custStatNum} ${styles.colOut}`}>{c.totalOut.toLocaleString('id-ID')}</span> OUT</span>
                     {c.totalIn>0&&<span className={styles.custStat}><span className={`${styles.custStatNum} ${styles.colIn}`}>{c.totalIn.toLocaleString('id-ID')}</span> IN</span>}
                   </div>
@@ -495,7 +503,7 @@ function BpbRjDashboard({ rows, onClose }) {
                           <td className={`${styles.mtd} ${styles.tdDate}`}>{r.tglPO}</td>
                           <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.kodeBarang}</td>
                           <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
-                          <td className={`${styles.mtd} ${styles.tdNoTx}`}>{r.noTx}</td>
+                          <td className={`${styles.mtd} ${styles.tdNoTx}`}>{r.noTx} {r.batal&&<span className={styles.badgeMuted}>⊘ Batal</span>}</td>
                           <td className={`${styles.mtd} ${styles.tdReff}`}>{r.noReff}</td>
                           <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyOut>0?styles.colOut:styles.colMuted}`}>{r.qtyOut>0?fmt(r.qtyOut):'—'}</td>
                           <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyIn>0?styles.colIn:styles.colMuted}`}>{r.qtyIn>0?fmt(r.qtyIn):'—'}</td>

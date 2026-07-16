@@ -3,7 +3,7 @@
   --bg: #0d0f0e; --surface: #141714; --surface2: #1c1f1c;
   --border: #2a2f2a; --border2: #3a3f3a;
   --accent: #00e676; --accent2: #69f0ae;
-  --accent-dim: rgba(0, 230, 118, 0.12);
+  --accent-dim: rgba(0,230,118,0.12);
   --text: #e8ede8; --text2: #9ba89b; --text3: #5a665a;
   --danger: #ff5252; --warn: #ffab40; --info: #40c4ff;
   --font-mono: 'IBM Plex Mono', monospace; --font-sans: 'IBM Plex Sans', sans-serif;

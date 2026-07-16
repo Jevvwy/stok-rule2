@@ -290,12 +290,18 @@ export function getAdjAnalysis(items) {
   const map = {}
   for (const item of items) {
     const key = item.kodeBarang
-    if (!map[key]) map[key] = { kodeBarang: key, deskripsi: item.deskripsi, unit: item.unit, bpbRjList: [], adjMinList: [] }
+    if (!map[key]) map[key] = { kodeBarang: key, deskripsi: item.deskripsi, unit: item.unit, bpbRjList: [], adjMinList: [], soList: [] }
     for (const t of item.transactions) {
       const isBpbRj = t.type === 'BPB/R.j' || t.type === 'BPB/R.J'
-      const isAdjMin = t.jenisTrs.toLowerCase().includes('adj min nkl') || t.jenisTrs.toLowerCase().includes('adj min')
+      const jenisLower = t.jenisTrs.toLowerCase()
+      const typeUpper = (t.type || '').toUpperCase()
+      const isSORutin = typeUpper.includes('S.O')
+      // ADJ(-) murni = Adj Min nkl dengan type ADJ(-), BUKAN yang dari S.O Rutin
+      const isAdjMin = (jenisLower.includes('adj min')) && !isSORutin
       if (isBpbRj) map[key].bpbRjList.push({ tglPO: t.tglPO, noTx: t.noTx, kodeCust: t.kodeCust, noReff: t.noReff, qtyOut: t.out, qtyIn: t.in, admUser: t.admUser, admTanggal: t.admTanggal, batal: t.isBpbRjBatal })
       if (isAdjMin) map[key].adjMinList.push({ tglPO: t.tglPO, noTx: t.noTx, noReff: t.noReff, qtyOut: t.out, qtyIn: t.in, admUser: t.admUser, admTanggal: t.admTanggal })
+      // S.O Rutin: baik Adj Min maupun Adj Plus
+      if (isSORutin) map[key].soList.push({ tglPO: t.tglPO, noTx: t.noTx, noReff: t.noReff, jenisTrs: t.jenisTrs, qtyOut: t.out, qtyIn: t.in, saldo: t.saldo, admUser: t.admUser, admTanggal: t.admTanggal })
     }
   }
   // Only return items that have at least one BPB/R.j or ADJ(-)
@@ -336,58 +342,4 @@ export function getBpbRj(items) {
     }
   }
   return rows
-}
-
-
-// ── SO Harian (Stock Opname) CSV parser ──────────────────────────────────────
-// Format: Nomor;S1;S2;Tanggal;Nama;QHas;QtyS;QSel;KET;Catatan
-export function parseSOCsv(text, cleanKode = true) {
-  const lines = text.split(/\r?\n/)
-  const rows = []
-  for (const ln of lines) {
-    if (!ln.includes(';')) continue
-    const parts = ln.split(';').map(s => s.trim())
-    if (parts.length < 9) continue
-    // Skip header row
-    if (parts[0].startsWith('Nomor')) continue
-    // Data rows: Nomor like 002.1.000027, Tanggal like 02/03/2026
-    if (!/^[\d.]+$/.test(parts[0])) continue
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(parts[3])) continue
-
-    // Nama = "-0031051206017 POLOS 12 MM TJ SNI TP280"
-    const namaParts = parts[4].split(/\s+/)
-    let kode = namaParts[0] || ''
-    const nama = namaParts.slice(1).join(' ')
-    if (cleanKode) kode = kode.replace(/-/g, '').replace(/^0+/, '')
-
-    const num = (s) => {
-      s = String(s).replace(/[^0-9\-]/g, '')
-      return s === '' || s === '-' ? 0 : parseInt(s, 10)
-    }
-
-    rows.push({
-      nomor: parts[0],
-      s1: parts[1],
-      s2: parts[2],
-      tanggal: parts[3],
-      kodeBarang: kode,
-      nama,
-      qHas: num(parts[5]),
-      qtyS: num(parts[6]),
-      qSel: num(parts[7]),
-      ket: parts[8].trim(),
-      catatan: (parts[9] || '').trim(),
-    })
-  }
-  return rows
-}
-
-// Group SO rows by kode barang for quick lookup
-export function groupSOByKode(soRows) {
-  const map = {}
-  for (const r of soRows) {
-    if (!map[r.kodeBarang]) map[r.kodeBarang] = []
-    map[r.kodeBarang].push(r)
-  }
-  return map
 }

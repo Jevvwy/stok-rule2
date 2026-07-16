@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { processTextToDf, getBeliNklLambat, getBpbRj } from './parser'
+import styles from './page.module.css'
 
 const PASSWORD = 'gasemuatau'
-import { processTextToDf, getBeliNklLambat } from './parser'
-import styles from './page.module.css'
 
 const COLS = [
   { key: 'kodeBarang', label: 'Kode Barang', align: 'left' },
@@ -26,23 +26,23 @@ function fmt(v) {
 
 function selisihBadge(n, hasWeekend) {
   if (n === null || n === undefined || n < 2) return null
-  // Only H+2 with weekend gets the orange weekend badge
-  // H+3 and above = always red regardless of weekend (lupa input / indikasi fraud)
   if (n === 2 && hasWeekend) return { label: 'H+2 🏖', cls: 'badgeWeekend' }
   return { label: `H+${n}`, cls: 'badgeDanger' }
 }
 
+// ─── Transaction Detail Modal (per item) ───────────────────────────────────
 function TransactionModal({ item, onClose }) {
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
   }, [onClose])
 
   const txs = item.transactions || []
   const totalIn = txs.reduce((s, t) => s + (t.in || 0), 0)
   const totalOut = txs.reduce((s, t) => s + (t.out || 0), 0)
   const lambatCount = txs.filter(t => t.isLambat).length
+  const bpbRjCount = txs.filter(t => t.isBpbRj).length
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -54,7 +54,6 @@ function TransactionModal({ item, onClose }) {
           </div>
           <button className={styles.modalClose} onClick={onClose}>✕</button>
         </div>
-
         <div className={styles.modalStats}>
           <div className={styles.modalStat}><span className={styles.modalStatLabel}>Saldo Awal</span><span className={styles.modalStatVal}>{fmt(item.saldoAwal)}</span></div>
           <div className={styles.modalStat}><span className={styles.modalStatLabel}>Total IN</span><span className={`${styles.modalStatVal} ${styles.colIn}`}>{fmt(totalIn)}</span></div>
@@ -62,18 +61,11 @@ function TransactionModal({ item, onClose }) {
           <div className={styles.modalStat}><span className={styles.modalStatLabel}>Saldo Akhir</span><span className={`${styles.modalStatVal} ${styles.colSaldo}`}>{fmt(item.saldoAkhir)}</span></div>
           <div className={styles.modalStat}><span className={styles.modalStatLabel}>Unit</span><span className={styles.modalStatVal}>{item.unit || '—'}</span></div>
           <div className={styles.modalStat}><span className={styles.modalStatLabel}>Transaksi</span><span className={styles.modalStatVal}>{txs.length}</span></div>
-          {lambatCount > 0 && (
-            <div className={styles.modalStat}>
-              <span className={styles.modalStatLabel}>Beli nkl Lambat</span>
-              <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{lambatCount}</span>
-            </div>
-          )}
+          {bpbRjCount > 0 && <div className={styles.modalStat}><span className={styles.modalStatLabel}>BPB/R.j</span><span className={`${styles.modalStatVal} ${styles.colWarn}`}>{bpbRjCount}</span></div>}
+          {lambatCount > 0 && <div className={styles.modalStat}><span className={styles.modalStatLabel}>Input Lambat</span><span className={`${styles.modalStatVal} ${styles.colDanger}`}>{lambatCount}</span></div>}
         </div>
-
         <div className={styles.modalTableWrap}>
-          {txs.length === 0 ? (
-            <div className={styles.modalEmpty}>Tidak ada transaksi untuk item ini</div>
-          ) : (
+          {txs.length === 0 ? <div className={styles.modalEmpty}>Tidak ada transaksi</div> : (
             <table className={styles.modalTable}>
               <thead>
                 <tr>
@@ -99,7 +91,7 @@ function TransactionModal({ item, onClose }) {
                   return (
                     <tr key={i} className={[
                       styles.mtr,
-                      t.in > 0 ? styles.mtrIn : t.out > 0 ? styles.mtrOut : '',
+                      t.isBpbRj ? styles.mtrBpbRj : t.in > 0 ? styles.mtrIn : t.out > 0 ? styles.mtrOut : '',
                       t.isLambat ? styles.mtrLambat : '',
                     ].join(' ')}>
                       <td className={`${styles.mtd} ${styles.tdNum}`}>{i + 1}</td>
@@ -109,15 +101,13 @@ function TransactionModal({ item, onClose }) {
                       <td className={`${styles.mtd} ${styles.tdJenis}`}>{t.jenisTrs || '—'}</td>
                       <td className={`${styles.mtd} ${styles.tdCust}`}>{t.kodeCust || '—'}</td>
                       <td className={`${styles.mtd} ${styles.tdReff}`}>{t.noReff || '—'}</td>
-                      <td className={`${styles.mtd} ${styles.tdType}`}>{t.type || '—'}</td>
+                      <td className={`${styles.mtd} ${t.isBpbRj ? styles.tdTypeBpb : styles.tdType}`}>{t.type || '—'}</td>
                       <td className={`${styles.mtd} ${styles.alignRight} ${t.in > 0 ? styles.colIn : styles.colMuted}`}>{t.in > 0 ? fmt(t.in) : '—'}</td>
                       <td className={`${styles.mtd} ${styles.alignRight} ${t.out > 0 ? styles.colOut : styles.colMuted}`}>{t.out > 0 ? fmt(t.out) : '—'}</td>
                       <td className={`${styles.mtd} ${styles.alignRight} ${styles.colSaldo}`}>{fmt(t.saldo)}</td>
                       <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{t.admUser || '—'}</td>
                       <td className={`${styles.mtd} ${styles.tdAdmDate}`}>{t.admTanggal || '—'}</td>
-                      <td className={styles.mtd}>
-                        {badge ? <span className={styles[badge.cls]}>{badge.label}</span> : '—'}
-                      </td>
+                      <td className={styles.mtd}>{badge ? <span className={styles[badge.cls]}>{badge.label}</span> : '—'}</td>
                     </tr>
                   )
                 })}
@@ -130,38 +120,25 @@ function TransactionModal({ item, onClose }) {
   )
 }
 
+// ─── Beli nkl Lambat Modal ─────────────────────────────────────────────────
 function LambatModal({ rows, onClose }) {
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
   }, [onClose])
 
   const exportLambat = async () => {
     const XLSX = await import('xlsx')
-    const wsData = rows.map(r => ({
-      'Kode Barang': r.kodeBarang,
-      'Deskripsi': r.deskripsi,
-      'Unit': r.unit,
-      'Tgl PO': r.tglPO,
-      'Waktu': r.waktu,
-      'No Transaksi': r.noTx,
-      'Jenis': r.jenisTrs,
-      'Cust/Supp': r.kodeCust,
-      'No Reff': r.noReff,
-      'Type': r.type,
-      'QTY IN': r.qty,
-      'Saldo': r.saldo,
-      'User ADM': r.admUser,
-      'Tgl Input ADM': r.admTanggal,
+    const ws = XLSX.utils.json_to_sheet(rows.map(r => ({
+      'Kode Barang': r.kodeBarang, 'Deskripsi': r.deskripsi, 'Unit': r.unit,
+      'Tgl PO': r.tglPO, 'Waktu': r.waktu, 'No Transaksi': r.noTx,
+      'Jenis': r.jenisTrs, 'Cust/Supp': r.kodeCust, 'No Reff': r.noReff,
+      'Type': r.type, 'QTY IN': r.qty, 'Saldo': r.saldo,
+      'User ADM': r.admUser, 'Tgl Input ADM': r.admTanggal,
       'Selisih Hari': r.selisihHari === 2 && r.hasWeekend ? 'H+2 (Weekend)' : `H+${r.selisihHari}`,
-    }))
-    const ws = XLSX.utils.json_to_sheet(wsData)
-    // Column widths
-    ws['!cols'] = [
-      {wch:14},{wch:36},{wch:6},{wch:12},{wch:10},{wch:22},{wch:12},
-      {wch:8},{wch:22},{wch:6},{wch:8},{wch:8},{wch:10},{wch:12},{wch:10}
-    ]
+    })))
+    ws['!cols'] = [{wch:14},{wch:36},{wch:6},{wch:12},{wch:10},{wch:22},{wch:12},{wch:8},{wch:22},{wch:6},{wch:8},{wch:8},{wch:10},{wch:12},{wch:10}]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Beli nkl Lambat')
     XLSX.writeFile(wb, `beli_nkl_lambat_${Date.now()}.xlsx`)
@@ -173,41 +150,22 @@ function LambatModal({ rows, onClose }) {
         <div className={styles.modalHeader}>
           <div>
             <div className={styles.modalKode} style={{color:'var(--danger)'}}>⚠ Beli nkl — Input Terlambat</div>
-            <div className={styles.modalDesc}>Transaksi dengan selisih Tgl PO vs Tgl Input ADM ≥ H+1</div>
+            <div className={styles.modalDesc}>Transaksi Beli nkl dengan selisih Tgl PO vs Tgl Input ADM ≥ H+2</div>
           </div>
           <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
             <button className={styles.btnExportSmall} onClick={exportLambat}>↓ Export Excel</button>
             <button className={styles.modalClose} onClick={onClose}>✕</button>
           </div>
         </div>
-
         <div className={styles.modalStats}>
-          <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>Total Transaksi</span>
-            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.length}</span>
-          </div>
-          <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>H+2 Weekend 🏖</span>
-            <span className={`${styles.modalStatVal} ${styles.colWarn}`}>{rows.filter(r=>r.selisihHari===2 && r.hasWeekend).length}</span>
-          </div>
-          <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>H+2 Terlambat</span>
-            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>r.selisihHari===2 && !r.hasWeekend).length}</span>
-          </div>
-          <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>H+3 ke atas ⚠</span>
-            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>r.selisihHari>=3).length}</span>
-          </div>
-          <div className={styles.modalStat}>
-            <span className={styles.modalStatLabel}>Total QTY</span>
-            <span className={styles.modalStatVal}>{rows.reduce((s,r)=>s+(r.qty||0),0).toLocaleString('id-ID')}</span>
-          </div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>Total</span><span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.length}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>H+2 Weekend 🏖</span><span className={`${styles.modalStatVal} ${styles.colWarn}`}>{rows.filter(r=>r.selisihHari===2&&r.hasWeekend).length}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>H+2 Terlambat</span><span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>r.selisihHari===2&&!r.hasWeekend).length}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>H+3 ke atas ⚠</span><span className={`${styles.modalStatVal} ${styles.colDanger}`}>{rows.filter(r=>r.selisihHari>=3).length}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>Total QTY</span><span className={styles.modalStatVal}>{rows.reduce((s,r)=>s+(r.qty||0),0).toLocaleString('id-ID')}</span></div>
         </div>
-
         <div className={styles.modalTableWrap}>
-          {rows.length === 0 ? (
-            <div className={styles.modalEmpty}>Tidak ada transaksi Beli nkl yang terlambat ✓</div>
-          ) : (
+          {rows.length === 0 ? <div className={styles.modalEmpty}>Tidak ada transaksi Beli nkl yang terlambat ✓</div> : (
             <table className={styles.modalTable}>
               <thead>
                 <tr>
@@ -229,7 +187,7 @@ function LambatModal({ rows, onClose }) {
                   const badge = selisihBadge(r.selisihHari, r.hasWeekend)
                   return (
                     <tr key={i} className={`${styles.mtr} ${styles.mtrLambat}`}>
-                      <td className={`${styles.mtd} ${styles.tdNum}`}>{i + 1}</td>
+                      <td className={`${styles.mtd} ${styles.tdNum}`}>{i+1}</td>
                       <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.kodeBarang}</td>
                       <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
                       <td className={`${styles.mtd} ${styles.tdDate}`}>{r.tglPO}</td>
@@ -239,7 +197,7 @@ function LambatModal({ rows, onClose }) {
                       <td className={`${styles.mtd} ${styles.alignRight} ${styles.colIn}`}>{fmt(r.qty)}</td>
                       <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.admUser}</td>
                       <td className={`${styles.mtd} ${styles.tdAdmDate}`}>{r.admTanggal}</td>
-                      <td className={styles.mtd}><span className={styles[badge.cls]}>{badge.label}</span></td>
+                      <td className={styles.mtd}>{badge && <span className={styles[badge.cls]}>{badge.label}</span>}</td>
                     </tr>
                   )
                 })}
@@ -252,6 +210,117 @@ function LambatModal({ rows, onClose }) {
   )
 }
 
+// ─── BPB/R.j Modal ─────────────────────────────────────────────────────────
+function BpbRjModal({ rows, onClose }) {
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const [search, setSearch] = useState('')
+  const filtered = search
+    ? rows.filter(r =>
+        r.kodeBarang.toLowerCase().includes(search.toLowerCase()) ||
+        r.deskripsi.toLowerCase().includes(search.toLowerCase()) ||
+        r.kodeCust.toLowerCase().includes(search.toLowerCase()) ||
+        r.noTx.toLowerCase().includes(search.toLowerCase()))
+    : rows
+
+  // Group by customer for summary
+  const custMap = {}
+  for (const r of rows) {
+    custMap[r.kodeCust] = (custMap[r.kodeCust] || 0) + 1
+  }
+  const topCust = Object.entries(custMap).sort((a,b)=>b[1]-a[1]).slice(0,3)
+
+  const exportBpbRj = async () => {
+    const XLSX = await import('xlsx')
+    const ws = XLSX.utils.json_to_sheet(filtered.map(r => ({
+      'Kode Barang': r.kodeBarang, 'Deskripsi': r.deskripsi, 'Unit': r.unit,
+      'Tgl PO': r.tglPO, 'Waktu': r.waktu, 'No Transaksi': r.noTx,
+      'Jenis': r.jenisTrs, 'Cust/Supp': r.kodeCust, 'No Reff': r.noReff,
+      'Type': r.type, 'QTY Retur (IN)': r.qtyIn || 0,
+      'QTY Kurang (OUT)': r.qtyOut || 0, 'Saldo': r.saldo,
+      'User ADM': r.admUser, 'Tgl Input ADM': r.admTanggal,
+    })))
+    ws['!cols'] = [{wch:14},{wch:36},{wch:6},{wch:12},{wch:10},{wch:22},{wch:12},{wch:10},{wch:22},{wch:8},{wch:14},{wch:15},{wch:8},{wch:10},{wch:12}]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'BPB-RJ')
+    XLSX.writeFile(wb, `bpb_rj_${Date.now()}.xlsx`)
+  }
+
+  return (
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        <div className={styles.modalHeader}>
+          <div>
+            <div className={styles.modalKode} style={{color:'var(--warn)'}}>📦 BPB/R.j — Barang Kurang / Retur</div>
+            <div className={styles.modalDesc}>
+              Semua transaksi BPB/R.j &nbsp;·&nbsp;
+              {topCust.length > 0 && <>Top cust: {topCust.map(([k,v])=>`${k}(${v})`).join(', ')}</>}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+            <input className={styles.modalSearch} placeholder="Cari kode / cust..." value={search} onChange={e=>setSearch(e.target.value)} />
+            <button className={styles.btnExportSmall} onClick={exportBpbRj}>↓ Export Excel</button>
+            <button className={styles.modalClose} onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div className={styles.modalStats}>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>Total Transaksi</span><span className={`${styles.modalStatVal} ${styles.colWarn}`}>{rows.length}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>Ada Retur (IN)</span><span className={`${styles.modalStatVal} ${styles.colIn}`}>{rows.filter(r=>r.qtyIn>0).length}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>Barang Kurang (OUT)</span><span className={`${styles.modalStatVal} ${styles.colOut}`}>{rows.filter(r=>r.qtyOut>0).length}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>Total QTY Retur</span><span className={`${styles.modalStatVal} ${styles.colIn}`}>{rows.reduce((s,r)=>s+(r.qtyIn||0),0).toLocaleString('id-ID')}</span></div>
+          <div className={styles.modalStat}><span className={styles.modalStatLabel}>Total QTY Kurang</span><span className={`${styles.modalStatVal} ${styles.colOut}`}>{rows.reduce((s,r)=>s+(r.qtyOut||0),0).toLocaleString('id-ID')}</span></div>
+          {search && <div className={styles.modalStat}><span className={styles.modalStatLabel}>Filter</span><span className={styles.modalStatVal}>{filtered.length}</span></div>}
+        </div>
+        <div className={styles.modalTableWrap}>
+          {filtered.length === 0 ? <div className={styles.modalEmpty}>Tidak ada hasil</div> : (
+            <table className={styles.modalTable}>
+              <thead>
+                <tr>
+                  <th className={styles.mth}>#</th>
+                  <th className={styles.mth}>Kode Barang</th>
+                  <th className={styles.mth}>Deskripsi</th>
+                  <th className={styles.mth}>Tgl PO</th>
+                  <th className={styles.mth}>No Transaksi</th>
+                  <th className={styles.mth}>Cust/Supp</th>
+                  <th className={styles.mth}>No Reff BPB Asal</th>
+                  <th className={`${styles.mth} ${styles.alignRight}`}>Retur IN</th>
+                  <th className={`${styles.mth} ${styles.alignRight}`}>Kurang OUT</th>
+                  <th className={`${styles.mth} ${styles.alignRight}`}>Saldo</th>
+                  <th className={styles.mth}>User ADM</th>
+                  <th className={styles.mth}>Tgl Input</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr key={i} className={`${styles.mtr} ${styles.mtrBpbRj}`}>
+                    <td className={`${styles.mtd} ${styles.tdNum}`}>{i+1}</td>
+                    <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.kodeBarang}</td>
+                    <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
+                    <td className={`${styles.mtd} ${styles.tdDate}`}>{r.tglPO}</td>
+                    <td className={`${styles.mtd} ${styles.tdNoTx}`}>{r.noTx}</td>
+                    <td className={`${styles.mtd} ${styles.tdCust}`}>{r.kodeCust}</td>
+                    <td className={`${styles.mtd} ${styles.tdReff}`}>{r.noReff}</td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyIn>0?styles.colIn:styles.colMuted}`}>{r.qtyIn>0?fmt(r.qtyIn):'—'}</td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyOut>0?styles.colOut:styles.colMuted}`}>{r.qtyOut>0?fmt(r.qtyOut):'—'}</td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${styles.colSaldo}`}>{fmt(r.saldo)}</td>
+                    <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.admUser}</td>
+                    <td className={`${styles.mtd} ${styles.tdAdmDate}`}>{r.admTanggal}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ──────────────────────────────────────────────────────────────
 export default function Home() {
   const [authed, setAuthed] = useState(() => {
     if (typeof window !== 'undefined') return sessionStorage.getItem('stok_auth') === '1'
@@ -261,14 +330,8 @@ export default function Home() {
   const [pwError, setPwError] = useState(false)
 
   const handleLogin = () => {
-    if (pwInput === PASSWORD) {
-      sessionStorage.setItem('stok_auth', '1')
-      setAuthed(true)
-      setPwError(false)
-    } else {
-      setPwError(true)
-      setPwInput('')
-    }
+    if (pwInput === PASSWORD) { sessionStorage.setItem('stok_auth','1'); setAuthed(true); setPwError(false) }
+    else { setPwError(true); setPwInput('') }
   }
 
   const [data, setData] = useState(null)
@@ -281,6 +344,7 @@ export default function Home() {
   const [sortDir, setSortDir] = useState('asc')
   const [selectedItem, setSelectedItem] = useState(null)
   const [showLambat, setShowLambat] = useState(false)
+  const [showBpbRj, setShowBpbRj] = useState(false)
   const fileRef = useRef()
 
   const processFile = useCallback((file) => {
@@ -318,6 +382,7 @@ export default function Home() {
   }
 
   const lambatRows = data ? getBeliNklLambat(data) : []
+  const bpbRjRows = data ? getBpbRj(data) : []
 
   const filteredData = data
     ? data.filter(r => !search ||
@@ -335,9 +400,9 @@ export default function Home() {
 
   const stats = data ? {
     items: data.length,
-    totalIn: data.reduce((s, r) => s + (r.totalIn || 0), 0),
-    totalOut: data.reduce((s, r) => s + (r.totalOut || 0), 0),
-    withTx: data.filter(r => r.hasTx).length,
+    totalIn: data.reduce((s,r)=>s+(r.totalIn||0),0),
+    totalOut: data.reduce((s,r)=>s+(r.totalOut||0),0),
+    withTx: data.filter(r=>r.hasTx).length,
   } : null
 
   if (!authed) {
@@ -349,8 +414,7 @@ export default function Home() {
           <div className={styles.loginSub}>Rule 2 Processor</div>
           <input
             className={`${styles.loginInput} ${pwError ? styles.loginInputError : ''}`}
-            type="password"
-            placeholder="Masukkan password..."
+            type="password" placeholder="Masukkan password..."
             value={pwInput}
             onChange={e => { setPwInput(e.target.value); setPwError(false) }}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
@@ -379,9 +443,14 @@ export default function Home() {
               <>
                 <input className={styles.search} placeholder="Cari kode / deskripsi..."
                   value={search} onChange={e => setSearch(e.target.value)} />
+                {bpbRjRows.length > 0 && (
+                  <button className={styles.btnBpbRj} onClick={() => setShowBpbRj(true)}>
+                    📦 BPB/R.j ({bpbRjRows.length})
+                  </button>
+                )}
                 {lambatRows.length > 0 && (
                   <button className={styles.btnLambat} onClick={() => setShowLambat(true)}>
-                    ⚠ Beli nkl Lambat ({lambatRows.length})
+                    ⚠ Input Lambat ({lambatRows.length})
                   </button>
                 )}
                 <button className={styles.btnExport} onClick={exportExcel}>↓ Export Excel</button>
@@ -394,13 +463,13 @@ export default function Home() {
       <main className={styles.main}>
         {!data && (
           <div className={`${styles.dropzone} ${dragging ? styles.dropzoneActive : ''}`}
-            onDragOver={e => { e.preventDefault(); setDragging(true) }}
-            onDragLeave={() => setDragging(false)} onDrop={handleDrop}
-            onClick={() => fileRef.current.click()}>
-            <input ref={fileRef} type="file" accept=".txt" style={{ display: 'none' }}
-              onChange={e => processFile(e.target.files[0])} />
+            onDragOver={e=>{e.preventDefault();setDragging(true)}}
+            onDragLeave={()=>setDragging(false)} onDrop={handleDrop}
+            onClick={()=>fileRef.current.click()}>
+            <input ref={fileRef} type="file" accept=".txt" style={{display:'none'}}
+              onChange={e=>processFile(e.target.files[0])} />
             <div className={styles.dropIcon}>⬆</div>
-            <div className={styles.dropTitle}>{loading ? 'Memproses...' : 'Upload File TXT'}</div>
+            <div className={styles.dropTitle}>{loading?'Memproses...':'Upload File TXT'}</div>
             <div className={styles.dropSub}>Drag & drop atau klik untuk memilih file</div>
             <div className={styles.dropHint}>.txt — Kartu Stok format</div>
           </div>
@@ -410,11 +479,11 @@ export default function Home() {
           <div className={styles.controlBar}>
             <div className={styles.fileTag}><span className={styles.fileTagIcon}>▣</span>{fileName}</div>
             <label className={styles.toggle}>
-              <input type="checkbox" checked={cleanKode} onChange={e => setCleanKode(e.target.checked)} />
+              <input type="checkbox" checked={cleanKode} onChange={e=>setCleanKode(e.target.checked)} />
               <span className={styles.toggleTrack} />
               <span className={styles.toggleLabel}>Clean Kode Barang</span>
             </label>
-            <button className={styles.btnReupload} onClick={() => { setData(null); setFileName(null); setSearch('') }}>
+            <button className={styles.btnReupload} onClick={()=>{setData(null);setFileName(null);setSearch('')}}>
               ↺ Ganti File
             </button>
             <div className={styles.clickHint}>💡 Klik baris untuk lihat detail transaksi</div>
@@ -427,10 +496,16 @@ export default function Home() {
             <div className={styles.stat}><div className={`${styles.statVal} ${styles.statIn}`}>{stats.totalIn.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Total IN</div></div>
             <div className={styles.stat}><div className={`${styles.statVal} ${styles.statOut}`}>{stats.totalOut.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Total OUT</div></div>
             <div className={styles.stat}><div className={styles.statVal}>{stats.withTx.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Punya Transaksi</div></div>
+            {bpbRjRows.length > 0 && (
+              <div className={`${styles.stat} ${styles.statWarn}`} style={{cursor:'pointer'}} onClick={()=>setShowBpbRj(true)}>
+                <div className={`${styles.statVal} ${styles.colWarn}`}>{bpbRjRows.length}</div>
+                <div className={styles.statLabel}>BPB/R.j 📦</div>
+              </div>
+            )}
             {lambatRows.length > 0 && (
-              <div className={`${styles.stat} ${styles.statDanger}`} style={{cursor:'pointer'}} onClick={() => setShowLambat(true)}>
+              <div className={`${styles.stat} ${styles.statDanger}`} style={{cursor:'pointer'}} onClick={()=>setShowLambat(true)}>
                 <div className={`${styles.statVal} ${styles.statRed}`}>{lambatRows.length}</div>
-                <div className={styles.statLabel}>Beli nkl Lambat ⚠</div>
+                <div className={styles.statLabel}>Input Lambat ⚠</div>
               </div>
             )}
             {search && <div className={styles.stat}><div className={styles.statVal}>{sortedData.length.toLocaleString('id-ID')}</div><div className={styles.statLabel}>Hasil Filter</div></div>}
@@ -443,29 +518,33 @@ export default function Home() {
               <thead>
                 <tr>
                   {COLS.map(col => (
-                    <th key={col.key} className={`${styles.th} ${styles['align_' + col.align]}`} onClick={() => handleSort(col.key)}>
-                      {col.label}{sortKey === col.key && <span className={styles.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</span>}
+                    <th key={col.key} className={`${styles.th} ${styles['align_'+col.align]}`} onClick={()=>handleSort(col.key)}>
+                      {col.label}{sortKey===col.key&&<span className={styles.sortArrow}>{sortDir==='asc'?' ↑':' ↓'}</span>}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {sortedData.map((row, i) => {
-                  const hasLambat = row.transactions?.some(t => t.isLambat)
+                  const hasLambat = row.transactions?.some(t=>t.isLambat)
+                  const hasBpbRj = row.transactions?.some(t=>t.isBpbRj)
                   return (
-                    <tr key={i} className={`${styles.tr} ${hasLambat ? styles.trLambat : ''}`}
-                      onClick={() => setSelectedItem(row)} title="Klik untuk lihat transaksi">
+                    <tr key={i} className={[
+                      styles.tr,
+                      hasLambat ? styles.trLambat : '',
+                      hasBpbRj && !hasLambat ? styles.trBpbRj : '',
+                    ].join(' ')} onClick={()=>setSelectedItem(row)} title="Klik untuk lihat transaksi">
                       {COLS.map(col => (
                         <td key={col.key} className={[
-                          styles.td, styles['align_' + col.align],
-                          col.color === 'in' ? styles.tdIn : '',
-                          col.color === 'out' ? styles.tdOut : '',
-                          col.color === 'saldo' ? styles.tdSaldo : '',
-                          col.key === 'hasTx' ? (row[col.key] ? styles.tdYes : styles.tdNo) : '',
-                          col.key === 'kodeBarang' ? styles.tdKode : '',
+                          styles.td, styles['align_'+col.align],
+                          col.color==='in'?styles.tdIn:'',
+                          col.color==='out'?styles.tdOut:'',
+                          col.color==='saldo'?styles.tdSaldo:'',
+                          col.key==='hasTx'?(row[col.key]?styles.tdYes:styles.tdNo):'',
+                          col.key==='kodeBarang'?styles.tdKode:'',
                         ].join(' ')}>
-                          {col.key === 'kodeBarang' && hasLambat
-                            ? <>{fmt(row[col.key])} <span className={styles.lambatDot}>●</span></>
+                          {col.key==='kodeBarang'
+                            ? <>{fmt(row[col.key])}{hasLambat&&<span className={styles.lambatDot} title="Ada input lambat"> ●</span>}{hasBpbRj&&<span className={styles.bpbDot} title="Ada BPB/R.j"> ◆</span>}</>
                             : fmt(row[col.key])}
                         </td>
                       ))}
@@ -474,15 +553,16 @@ export default function Home() {
                 })}
               </tbody>
             </table>
-            {sortedData.length === 0 && <div className={styles.empty}>Tidak ada hasil untuk "{search}"</div>}
+            {sortedData.length===0&&<div className={styles.empty}>Tidak ada hasil untuk "{search}"</div>}
           </div>
         )}
       </main>
 
       <footer className={styles.footer}>Kartu Stok Rule 2 Processor — running saldo method</footer>
 
-      {selectedItem && <TransactionModal item={selectedItem} onClose={() => setSelectedItem(null)} />}
-      {showLambat && <LambatModal rows={lambatRows} onClose={() => setShowLambat(false)} />}
+      {selectedItem && <TransactionModal item={selectedItem} onClose={()=>setSelectedItem(null)} />}
+      {showLambat && <LambatModal rows={lambatRows} onClose={()=>setShowLambat(false)} />}
+      {showBpbRj && <BpbRjModal rows={bpbRjRows} onClose={()=>setShowBpbRj(false)} />}
     </div>
   )
 }

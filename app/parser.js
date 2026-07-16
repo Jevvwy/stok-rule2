@@ -1,4 +1,4 @@
-// parser.js — full extraction + H+1 detection for Beli nkl
+// parser.js — full extraction with fixed column parsing for all transaction types
 
 const TOKEN_NUM_RE = /^[\d\-\(\),\.]+$/
 
@@ -26,48 +26,36 @@ function isValidToken(tok) {
 }
 
 function parseAdm(adm) {
-  if (!adm) return { admUser: '', admTanggal: '', admDate: null }
+  if (!adm) return { admUser: '', admTanggal: '', admDay: null, admMonth: null }
   adm = adm.trim()
-
   // Format 1: LETTERS-DDMM  e.g. DAB-2904
   let m = adm.match(/^([A-Za-z]+)-(\d{2})(\d{2})$/)
   if (m) {
-    const dd = parseInt(m[2]), mm = parseInt(m[3])
-    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
+    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: parseInt(m[2]), admMonth: parseInt(m[3]) }
   }
-
-  // Format 2: NUM--DDMM  e.g. 03--0804, 01--2904
+  // Format 2: NUM--DDMM  e.g. 03--0804
   m = adm.match(/^(\w+)--(\d{2})(\d{2})$/)
   if (m) {
-    const dd = parseInt(m[2]), mm = parseInt(m[3])
-    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
+    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: parseInt(m[2]), admMonth: parseInt(m[3]) }
   }
-
-  // Format 3: NUM-DDMM  e.g. 015-1704, 04-0404
+  // Format 3: NUM-DDMM  e.g. 015-1704
   m = adm.match(/^(\d+)-(\d{2})(\d{2})$/)
   if (m) {
-    const dd = parseInt(m[2]), mm = parseInt(m[3])
-    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: dd, admMonth: mm }
+    return { admUser: m[1], admTanggal: `${m[2]}/${m[3]}`, admDay: parseInt(m[2]), admMonth: parseInt(m[3]) }
   }
-
   return { admUser: adm, admTanggal: '', admDay: null, admMonth: null }
 }
 
-// Calculate day difference and weekend info between tglPO and ADM input date
 function calcSelisih(tglPO, admDay, admMonth) {
   if (!tglPO || admDay == null || admMonth == null) return { days: null, hasWeekend: false }
   const parts = tglPO.split('/')
   if (parts.length < 3) return { days: null, hasWeekend: false }
-  const poDay = parseInt(parts[0])
-  const poMonth = parseInt(parts[1])
-  const poYear = parseInt(parts[2])
+  const poDay = parseInt(parts[0]), poMonth = parseInt(parts[1]), poYear = parseInt(parts[2])
   let admYear = poYear
   if (admMonth < poMonth) admYear = poYear + 1
   const poDate = new Date(poYear, poMonth - 1, poDay)
   const admDate = new Date(admYear, admMonth - 1, admDay)
   const diffDays = Math.round((admDate - poDate) / (1000 * 60 * 60 * 24))
-
-  // Check if PO day itself OR any day in between is Sat(6) or Sun(0)
   let hasWeekend = (poDate.getDay() === 0 || poDate.getDay() === 6)
   if (!hasWeekend) {
     let d = new Date(poDate)
@@ -77,8 +65,77 @@ function calcSelisih(tglPO, admDay, admMonth) {
       d.setDate(d.getDate() + 1)
     }
   }
-
   return { days: diffDays, hasWeekend }
+}
+
+// Parse a transaction line — handles variable column counts per jenis
+function parseTxLine(raw) {
+  // Extract date + time
+  const dateTimeMatch = raw.match(/^(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/)
+  if (!dateTimeMatch) return null
+  const tglPO = dateTimeMatch[1]
+  const waktu = dateTimeMatch[2] || ''
+
+  // Extract ADM from end: patterns like 006-0904, THE-0602, 014-1905
+  const admMatch = raw.match(/\s+([\w]+-{1,2}\d{4})\s*$/)
+  const admRaw = admMatch ? admMatch[1] : ''
+  const { admUser, admTanggal, admDay, admMonth } = parseAdm(admRaw)
+
+  // Remove date+time and ADM from raw to get middle
+  const withoutAdm = admMatch ? raw.slice(0, raw.lastIndexOf(admMatch[0])).trim() : raw
+  const middle = withoutAdm.slice(dateTimeMatch[0].length).trim()
+
+  // Split by 2+ spaces to get fields
+  const fields = middle.split(/\s{2,}/).map(s => s.trim()).filter(Boolean)
+
+  // Fields order (from header): NO_TX, JENIS, CUST/SUPP, NO_REFF, TYPE, IN, OUT, SALDO
+  // But some transactions skip CUST/SUPP and NO_REFF
+  // Detect by finding which field is the TYPE keyword
+  const TYPE_KEYWORDS = ['BPB', 'BPB/R.j', 'DO', 'ADJ(-)', 'ADJ(+)', 'S.O Rutin', 'PO']
+
+  let noTx = '', jenisTrs = '', kodeCust = '', noReff = '', type = ''
+  let inQty = null, outQty = null, saldo = null
+
+  // Find numeric tail from the end
+  const allToks = middle.split(/\s+/)
+  const numTail = []
+  for (let i = allToks.length - 1; i >= 0; i--) {
+    if (isValidToken(allToks[i])) numTail.unshift(allToks[i])
+    else break
+  }
+
+  // SALDO is always last number
+  if (numTail.length >= 1) saldo = normalizeNum(numTail[numTail.length - 1])
+
+  // Find TYPE field — it's the last non-numeric text field before the numbers
+  // Strategy: find the TYPE keyword in fields
+  let typeIdx = -1
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i].toUpperCase()
+    if (f === 'BPB/R.J' || f === 'BPB' || f === 'DO' || f === 'PO' ||
+        f === 'ADJ(-)' || f === 'ADJ(+)' || f.includes('S.O') || f.includes('ADJ')) {
+      typeIdx = i
+    }
+  }
+
+  if (typeIdx >= 0) {
+    type = fields[typeIdx]
+    noTx = fields[0] || ''
+    jenisTrs = fields[1] || ''
+    // Between jenis and type: cust and reff
+    if (typeIdx === 4) { kodeCust = fields[2] || ''; noReff = fields[3] || '' }
+    else if (typeIdx === 3) { kodeCust = fields[2] || ''; noReff = '' }
+    else if (typeIdx === 2) { kodeCust = ''; noReff = '' }
+  } else {
+    // Fallback
+    noTx = fields[0] || ''
+    jenisTrs = fields[1] || ''
+    kodeCust = fields[2] || ''
+    noReff = fields[3] || ''
+    type = fields[4] || ''
+  }
+
+  return { tglPO, waktu, noTx, jenisTrs, kodeCust, noReff, type, admUser, admTanggal, admDay, admMonth, saldo }
 }
 
 export function processTextToDf(text, cleanKode = true) {
@@ -102,10 +159,8 @@ export function processTextToDf(text, cleanKode = true) {
     if (hasTx && lastSaldo !== null) saldoAkhir = lastSaldo
     else if (!hasTx) saldoAkhir = saldoAwal
     else { const base = saldoAwal !== null ? saldoAwal : 0; saldoAkhir = base + totalIn - totalOut }
-
     let kode = current.kode
     if (cleanKode) kode = kode.replace(/-/g, '').replace(/^0+/, '')
-
     items.push({
       kodeBarang: kode, deskripsi: current.desc, unit: current.unit,
       saldoAwal, totalIn: Math.round(totalIn), totalOut: Math.round(totalOut),
@@ -147,61 +202,29 @@ export function processTextToDf(text, cleanKode = true) {
     }
 
     if (/^\d{2}\/\d{2}\/\d{4}/.test(ln.trim())) {
-      const raw = ln.trim()
+      const parsed = parseTxLine(ln.trim())
+      if (!parsed) continue
 
-      const dateTimeMatch = raw.match(/^(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/)
-      const tglPO = dateTimeMatch ? dateTimeMatch[1] : ''
-      const waktu = dateTimeMatch ? (dateTimeMatch[2] || '') : ''
+      const { tglPO, waktu, noTx, jenisTrs, kodeCust, noReff, type,
+              admUser, admTanggal, admDay, admMonth, saldo: SAL } = parsed
 
-      const admMatch = raw.match(/\s+([\w]+-{1,2}\d{4})\s*$/)
-      const admRaw = admMatch ? admMatch[1] : ''
-      const { admUser, admTanggal, admDay, admMonth } = parseAdm(admRaw)
-
-      const withoutAdm = admMatch ? raw.slice(0, raw.lastIndexOf(admMatch[0])).trim() : raw
-
-      const allToks = withoutAdm.trim().split(/\s+/)
-      const numToks = []
-      for (let i = allToks.length - 1; i >= 0; i--) {
-        if (isValidToken(allToks[i])) numToks.unshift(allToks[i])
-        else break
-      }
-
-      let SAL = null, qtyIn = 0, qtyOut = 0
-      if (numToks.length >= 1) SAL = normalizeNum(numToks[numToks.length - 1])
-
+      let qtyIn = 0, qtyOut = 0
       if (typeof lastRunningSaldo === 'number' && typeof SAL === 'number') {
         const delta = SAL - lastRunningSaldo
         if (delta > 0) { qtyIn = delta; qtyOut = 0 }
         else if (delta < 0) { qtyIn = 0; qtyOut = Math.abs(delta) }
-        else { qtyIn = 0; qtyOut = 0 }
       }
-
-      const afterDateTime = raw.slice(dateTimeMatch ? dateTimeMatch[0].length : 0).trimStart()
-      const beforeNums = numToks.length > 0
-        ? afterDateTime.slice(0, afterDateTime.lastIndexOf(numToks[0])).trimEnd()
-        : afterDateTime
-
-      const textFields = beforeNums.split(/\s{2,}/).map(s => s.trim()).filter(Boolean)
-      const noTx     = textFields[0] || ''
-      const jenisTrs = textFields[1] || ''
-      const kodeCust = textFields[2] || ''
-      const noReff   = textFields[3] || ''
-      const type     = textFields[4] || ''
 
       const { days: selisihHari, hasWeekend: admHasWeekend } = calcSelisih(tglPO, admDay, admMonth)
       const isBeliNkl = jenisTrs.toLowerCase().includes('beli nkl')
-      // Lambat = H+2 or more. H+1 is acceptable.
-      // If weekend falls between PO and input date, flag with hasWeekend marker but still show it
       const isLambat = isBeliNkl && selisihHari !== null && selisihHari >= 2
+      const isBpbRj = type === 'BPB/R.j' || type === 'BPB/R.J'
 
       transactions.push({
         tglPO, waktu, noTx, jenisTrs, kodeCust, noReff, type,
         in: qtyIn, out: qtyOut, saldo: SAL,
-        admUser, admTanggal, admRaw,
-        selisihHari,
-        admHasWeekend,
-        isBeliNkl,
-        isLambat,
+        admUser, admTanggal, admRaw: admUser ? `${admUser}-${admTanggal}` : '',
+        selisihHari, admHasWeekend, isBeliNkl, isLambat, isBpbRj,
       })
 
       if (typeof SAL === 'number') lastRunningSaldo = SAL
@@ -212,29 +235,38 @@ export function processTextToDf(text, cleanKode = true) {
   return items
 }
 
-// Returns flat list of all "Beli nkl" rows with selisih >= 2
+// Returns flat list of all Beli nkl with selisih >= 2
 export function getBeliNklLambat(items) {
   const rows = []
   for (const item of items) {
     for (const t of item.transactions) {
       if (t.isLambat) {
         rows.push({
-          kodeBarang: item.kodeBarang,
-          deskripsi: item.deskripsi,
-          unit: item.unit,
-          tglPO: t.tglPO,
-          waktu: t.waktu,
-          noTx: t.noTx,
-          jenisTrs: t.jenisTrs,
-          kodeCust: t.kodeCust,
-          noReff: t.noReff,
-          type: t.type,
-          qty: t.in,
-          saldo: t.saldo,
-          admUser: t.admUser,
-          admTanggal: t.admTanggal,
-          selisihHari: t.selisihHari,
-          hasWeekend: t.admHasWeekend,
+          kodeBarang: item.kodeBarang, deskripsi: item.deskripsi, unit: item.unit,
+          tglPO: t.tglPO, waktu: t.waktu, noTx: t.noTx, jenisTrs: t.jenisTrs,
+          kodeCust: t.kodeCust, noReff: t.noReff, type: t.type,
+          qty: t.in, saldo: t.saldo,
+          admUser: t.admUser, admTanggal: t.admTanggal,
+          selisihHari: t.selisihHari, hasWeekend: t.admHasWeekend,
+        })
+      }
+    }
+  }
+  return rows
+}
+
+// Returns flat list of all BPB/R.j transactions
+export function getBpbRj(items) {
+  const rows = []
+  for (const item of items) {
+    for (const t of item.transactions) {
+      if (t.isBpbRj) {
+        rows.push({
+          kodeBarang: item.kodeBarang, deskripsi: item.deskripsi, unit: item.unit,
+          tglPO: t.tglPO, waktu: t.waktu, noTx: t.noTx, jenisTrs: t.jenisTrs,
+          kodeCust: t.kodeCust, noReff: t.noReff, type: t.type,
+          qtyIn: t.in, qtyOut: t.out, saldo: t.saldo,
+          admUser: t.admUser, admTanggal: t.admTanggal,
         })
       }
     }

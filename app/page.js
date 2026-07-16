@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, parseSOCsv, groupSOByKode } from './parser'
+import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis } from './parser'
 import styles from './page.module.css'
 
 const PASSWORD = 'gasemuatau'
@@ -54,7 +54,7 @@ function MiniBarChart({ data }) {
 }
 
 // ── ADJ Analysis Dashboard ───────────────────────────────────────────────────
-function AdjDashboard({ analysis, soMap, onClose }) {
+function AdjDashboard({ analysis, onClose }) {
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', h)
@@ -202,7 +202,7 @@ function AdjDashboard({ analysis, soMap, onClose }) {
                   <div className={styles.custCardStats}>
                     <span className={styles.custStat}><span className={`${styles.custStatNum} ${styles.colWarn}`}>{r.activeBpb}</span> BPB/R.j{r.batalBpb>0&&<span style={{color:'var(--text3)'}}> (+{r.batalBpb} batal)</span>}</span>
                     <span className={styles.custStat}><span className={`${styles.custStatNum} ${r.adjMinList.length>0?styles.colIn:styles.colDanger}`}>{r.adjMinList.length}</span> ADJ(-)</span>
-                    {soMap && soMap[r.kodeBarang] && <span className={styles.custStat}><span className={styles.custStatNum} style={{color:'var(--info)'}}>{soMap[r.kodeBarang].length}</span> SO</span>}
+                    {r.soList.length > 0 && <span className={styles.custStat}><span className={styles.custStatNum} style={{color:'var(--info)'}}>{r.soList.length}</span> S.O</span>}
                     {r.status==='NO_ADJ' && <span className={styles.badgeDanger}>Tidak ada ADJ</span>}
                     {r.status==='BOTH' && <span className={styles.badgeOk}>Ada ADJ</span>}
                     {r.status==='ADJ_ONLY' && <span className={styles.badgeWarn}>ADJ only</span>}
@@ -283,43 +283,35 @@ function AdjDashboard({ analysis, soMap, onClose }) {
                 )}
 
                 {/* Timeline */}
-                {/* SO Harian section */}
-                {soMap && (
+                {/* S.O Rutin section — dari kartu stok */}
+                {selectedItem.soList.length > 0 && (
                   <div className={styles.soSection}>
-                    <div className={styles.chartTitle} style={{padding:'12px 20px 0'}}>📋 History SO Harian — {selectedItem.kodeBarang}</div>
-                    {(soMap[selectedItem.kodeBarang]||[]).length === 0 ? (
-                      <div className={styles.soEmpty}>Tidak ada data SO untuk item ini</div>
-                    ) : (
-                      <table className={styles.modalTable}>
-                        <thead><tr>
-                          <th className={styles.mth}>No SO</th><th className={styles.mth}>Tanggal</th>
-                          <th className={styles.mth}>S1</th><th className={styles.mth}>S2</th>
-                          <th className={`${styles.mth} ${styles.alignRight}`}>Q Fisik</th>
-                          <th className={`${styles.mth} ${styles.alignRight}`}>Q Sistem</th>
-                          <th className={`${styles.mth} ${styles.alignRight}`}>Selisih</th>
-                          <th className={styles.mth}>KET</th><th className={styles.mth}>Catatan</th>
-                        </tr></thead>
-                        <tbody>
-                          {(soMap[selectedItem.kodeBarang]||[]).map((so,i)=>(
-                            <tr key={i} className={`${styles.mtr} ${so.ket==='KRG'?styles.mtrLambat:so.ket==='LBH'?styles.mtrBpbRj:''}`}>
-                              <td className={`${styles.mtd} ${styles.tdNoTx}`}>{so.nomor}</td>
-                              <td className={`${styles.mtd} ${styles.tdDate}`}>{so.tanggal}</td>
-                              <td className={`${styles.mtd}`} style={{color:so.s1==='AV'?'var(--accent)':'var(--danger)'}}>{so.s1}</td>
-                              <td className={`${styles.mtd}`} style={{color:so.s2==='AV'?'var(--accent)':'var(--danger)'}}>{so.s2}</td>
-                              <td className={`${styles.mtd} ${styles.alignRight}`}>{so.qHas.toLocaleString('id-ID')}</td>
-                              <td className={`${styles.mtd} ${styles.alignRight}`}>{so.qtyS.toLocaleString('id-ID')}</td>
-                              <td className={`${styles.mtd} ${styles.alignRight} ${so.qSel<0?styles.colOut:so.qSel>0?styles.colIn:styles.colMuted}`}>{so.qSel>0?'+':''}{so.qSel.toLocaleString('id-ID')}</td>
-                              <td className={styles.mtd}>
-                                {so.ket==='PAS'&&<span className={styles.badgeOk}>PAS</span>}
-                                {so.ket==='KRG'&&<span className={styles.badgeDanger}>KRG</span>}
-                                {so.ket==='LBH'&&<span className={styles.badgeWarn}>LBH</span>}
-                              </td>
-                              <td className={`${styles.mtd} ${styles.tdDescTx}`}>{so.catatan||'—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+                    <div className={styles.chartTitle} style={{padding:'12px 20px 8px'}}>📋 History S.O Rutin — {selectedItem.kodeBarang}</div>
+                    <table className={styles.modalTable}>
+                      <thead><tr>
+                        <th className={styles.mth}>Tanggal</th><th className={styles.mth}>No Transaksi</th>
+                        <th className={styles.mth}>Jenis</th><th className={styles.mth}>No Reff</th>
+                        <th className={`${styles.mth} ${styles.alignRight}`}>Adj (+)</th>
+                        <th className={`${styles.mth} ${styles.alignRight}`}>Adj (−)</th>
+                        <th className={`${styles.mth} ${styles.alignRight}`}>Saldo</th>
+                        <th className={styles.mth}>User ADM</th><th className={styles.mth}>Tgl Input</th>
+                      </tr></thead>
+                      <tbody>
+                        {selectedItem.soList.map((so,i)=>(
+                          <tr key={i} className={`${styles.mtr} ${so.qtyOut>0?styles.mtrLambat:so.qtyIn>0?styles.mtrAdj:''}`}>
+                            <td className={`${styles.mtd} ${styles.tdDate}`}>{so.tglPO}</td>
+                            <td className={`${styles.mtd} ${styles.tdNoTx}`}>{so.noTx}</td>
+                            <td className={`${styles.mtd} ${so.qtyOut>0?styles.colOut:styles.colIn}`}>{so.jenisTrs}</td>
+                            <td className={`${styles.mtd} ${styles.tdReff}`}>{so.noReff||'—'}</td>
+                            <td className={`${styles.mtd} ${styles.alignRight} ${so.qtyIn>0?styles.colIn:styles.colMuted}`}>{so.qtyIn>0?'+'+so.qtyIn.toLocaleString('id-ID'):'—'}</td>
+                            <td className={`${styles.mtd} ${styles.alignRight} ${so.qtyOut>0?styles.colOut:styles.colMuted}`}>{so.qtyOut>0?'−'+so.qtyOut.toLocaleString('id-ID'):'—'}</td>
+                            <td className={`${styles.mtd} ${styles.alignRight} ${styles.colSaldo}`}>{so.saldo!=null?so.saldo.toLocaleString('id-ID'):'—'}</td>
+                            <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{so.admUser||'—'}</td>
+                            <td className={`${styles.mtd} ${styles.tdAdmDate}`}>{so.admTanggal||'—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
@@ -646,18 +638,7 @@ export default function Home() {
   const [showLambat,setShowLambat]=useState(false)
   const [showBpbRj,setShowBpbRj]=useState(false)
   const [showAdj,setShowAdj]=useState(false)
-  const [soData,setSoData]=useState(null)
-  const [soFileName,setSoFileName]=useState(null)
   const fileRef=useRef()
-  const soFileRef=useRef()
-
-  const processSOFile=useCallback((file)=>{
-    if(!file||!file.name.toLowerCase().endsWith('.csv')){alert('Harap upload file .csv untuk SO Harian');return}
-    setSoFileName(file.name)
-    const reader=new FileReader()
-    reader.onload=(e)=>{try{setSoData(parseSOCsv(e.target.result,cleanKode))}catch(err){alert('Error SO: '+err.message)}}
-    reader.readAsText(file,'utf-8')
-  },[cleanKode])
 
   const processFile=useCallback((file)=>{
     if(!file||!file.name.endsWith('.txt')){alert('Harap upload file .txt');return}
@@ -717,10 +698,6 @@ export default function Home() {
           <div className={styles.fileTag}><span className={styles.fileTagIcon}>▣</span>{fileName}</div>
           <label className={styles.toggle}><input type="checkbox" checked={cleanKode} onChange={e=>setCleanKode(e.target.checked)} /><span className={styles.toggleTrack} /><span className={styles.toggleLabel}>Clean Kode Barang</span></label>
           <button className={styles.btnReupload} onClick={()=>{setData(null);setFileName(null);setSearch('')}}>↺ Ganti File</button>
-          <input ref={soFileRef} type="file" accept=".csv" style={{display:'none'}} onChange={e=>processSOFile(e.target.files[0])} />
-          {!soData
-            ? <button className={styles.btnSO} onClick={()=>soFileRef.current.click()}>+ Upload SO Harian (CSV)</button>
-            : <div className={styles.fileTag} style={{borderColor:'rgba(64,196,255,0.4)'}}><span style={{color:'var(--info)'}}>📋</span>{soFileName} · {soData.length} SO<button className={styles.soRemove} onClick={()=>{setSoData(null);setSoFileName(null)}}>✕</button></div>}
           <div className={styles.clickHint}>💡 Klik baris untuk lihat detail transaksi</div>
         </div>)}
         {stats&&(<div className={styles.stats}>
@@ -754,7 +731,7 @@ export default function Home() {
       {selectedItem&&<TransactionModal item={selectedItem} onClose={()=>setSelectedItem(null)} />}
       {showLambat&&<LambatModal rows={lambatRows} onClose={()=>setShowLambat(false)} />}
       {showBpbRj&&<BpbRjDashboard rows={bpbRjRows} onClose={()=>setShowBpbRj(false)} />}
-      {showAdj&&<AdjDashboard analysis={adjAnalysis} soMap={soData?groupSOByKode(soData):null} onClose={()=>setShowAdj(false)} />}
+      {showAdj&&<AdjDashboard analysis={adjAnalysis} onClose={()=>setShowAdj(false)} />}
     </div>
   )
 }

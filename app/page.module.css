@@ -206,3 +206,58 @@
 .modalSearch { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--font-mono); font-size: 11px; padding: 5px 10px; width: 160px; outline: none; }
 .modalSearch:focus { border-color: var(--accent); }
 .modalSearch::placeholder { color: var(--text3); }
+
+/* ===== DASHBOARD BPB/R.j ===== */
+.dashModal { background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; width: 100%; max-width: 1300px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; animation: slideUp 0.18s ease; box-shadow: 0 24px 64px rgba(0,0,0,0.6); }
+.dashBody { display: flex; flex: 1; overflow: hidden; }
+
+/* Left panel */
+.dashLeft { width: 260px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--surface2); }
+.dashLeftHeader { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.dashLeftTitle { font-family: var(--font-mono); font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; }
+.sortToggle { display: flex; gap: 4px; }
+.sortBtn { background: transparent; border: 1px solid var(--border2); border-radius: 3px; color: var(--text3); font-family: var(--font-mono); font-size: 9px; padding: 2px 6px; cursor: pointer; transition: all 0.15s; }
+.sortBtnActive { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+.custList { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.custCard { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; cursor: pointer; transition: all 0.15s; }
+.custCard:hover { border-color: var(--accent); background: var(--accent-dim); }
+.custCardActive { border-color: var(--accent) !important; background: var(--accent-dim) !important; }
+.custCardHigh { border-color: rgba(255,82,82,0.4); }
+.custCardMed { border-color: rgba(255,171,64,0.3); }
+.custCardTop { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.custRank { font-family: var(--font-mono); font-size: 10px; color: var(--text3); width: 20px; }
+.custKode { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+.custCardStats { display: flex; gap: 10px; flex-wrap: wrap; }
+.custStat { font-size: 11px; color: var(--text3); }
+.custStatNum { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+
+/* Right panel */
+.dashRight { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.dashEmpty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--text3); font-size: 14px; }
+.dashEmptyIcon { font-size: 48px; }
+.custDetailHeader { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.custDetailKode { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--warn); }
+.custDetailSub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.custDetailStats { display: flex; border-bottom: 1px solid var(--border); }
+
+/* Charts */
+.chartSection { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+.chartBox { flex: 1; padding: 16px 20px; border-right: 1px solid var(--border); }
+.chartBox:last-child { border-right: none; }
+.chartTitle { font-family: var(--font-mono); font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px; }
+.chartWrap { display: flex; align-items: flex-end; gap: 4px; height: 80px; }
+.chartCol { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; min-width: 0; }
+.chartBar { width: 100%; background: var(--danger); border-radius: 2px 2px 0 0; opacity: 0.8; transition: opacity 0.15s; min-width: 4px; }
+.chartCol:hover .chartBar { opacity: 1; }
+.chartLabel { font-family: var(--font-mono); font-size: 8px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-align: center; }
+
+/* Item bars */
+.itemBars { display: flex; flex-direction: column; gap: 6px; }
+.itemBar { display: flex; align-items: center; gap: 8px; }
+.itemBarLabel { font-family: var(--font-mono); font-size: 10px; color: var(--accent2); width: 90px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.itemBarTrack { flex: 1; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+.itemBarFill { height: 100%; background: var(--danger); border-radius: 4px; opacity: 0.7; }
+.itemBarVal { font-family: var(--font-mono); font-size: 10px; color: var(--text2); white-space: nowrap; min-width: 60px; text-align: right; }
+.itemBarCount { color: var(--text3); }
+
+.custTxWrap { overflow: auto; flex: 1; }

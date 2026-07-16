@@ -323,3 +323,57 @@ export function getBpbRj(items) {
   }
   return rows
 }
+
+
+// ── SO Harian (Stock Opname) CSV parser ──────────────────────────────────────
+// Format: Nomor;S1;S2;Tanggal;Nama;QHas;QtyS;QSel;KET;Catatan
+export function parseSOCsv(text, cleanKode = true) {
+  const lines = text.split(/\r?\n/)
+  const rows = []
+  for (const ln of lines) {
+    if (!ln.includes(';')) continue
+    const parts = ln.split(';').map(s => s.trim())
+    if (parts.length < 9) continue
+    // Skip header row
+    if (parts[0].startsWith('Nomor')) continue
+    // Data rows: Nomor like 002.1.000027, Tanggal like 02/03/2026
+    if (!/^[\d.]+$/.test(parts[0])) continue
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(parts[3])) continue
+
+    // Nama = "-0031051206017 POLOS 12 MM TJ SNI TP280"
+    const namaParts = parts[4].split(/\s+/)
+    let kode = namaParts[0] || ''
+    const nama = namaParts.slice(1).join(' ')
+    if (cleanKode) kode = kode.replace(/-/g, '').replace(/^0+/, '')
+
+    const num = (s) => {
+      s = String(s).replace(/[^0-9\-]/g, '')
+      return s === '' || s === '-' ? 0 : parseInt(s, 10)
+    }
+
+    rows.push({
+      nomor: parts[0],
+      s1: parts[1],
+      s2: parts[2],
+      tanggal: parts[3],
+      kodeBarang: kode,
+      nama,
+      qHas: num(parts[5]),
+      qtyS: num(parts[6]),
+      qSel: num(parts[7]),
+      ket: parts[8].trim(),
+      catatan: (parts[9] || '').trim(),
+    })
+  }
+  return rows
+}
+
+// Group SO rows by kode barang for quick lookup
+export function groupSOByKode(soRows) {
+  const map = {}
+  for (const r of soRows) {
+    if (!map[r.kodeBarang]) map[r.kodeBarang] = []
+    map[r.kodeBarang].push(r)
+  }
+  return map
+}

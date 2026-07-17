@@ -378,10 +378,25 @@ function BpbRjDashboard({ rows, onClose }) {
   const custMap = {}
   for (const r of rows) {
     const c = r.kodeCust || '(kosong)'
-    if (!custMap[c]) custMap[c] = { kodeCust: c, count: 0, batalCount: 0, totalOut: 0, totalIn: 0, transactions: [] }
-    custMap[c].count++; custMap[c].totalOut += r.qtyOut||0; custMap[c].totalIn += r.qtyIn||0
-    if (r.batal) custMap[c].batalCount++
+    if (!custMap[c]) custMap[c] = { kodeCust: c, totalOut: 0, totalIn: 0, transactions: [], _txMap: {} }
+    custMap[c].totalOut += r.qtyOut||0; custMap[c].totalIn += r.qtyIn||0
     custMap[c].transactions.push(r)
+    // Group items by nomor transaksi (1 transaksi bisa berisi beberapa item)
+    const txKey = r.noTx || `${r.tglPO}_${r.noReff}`
+    if (!custMap[c]._txMap[txKey]) custMap[c]._txMap[txKey] = { noTx: r.noTx, tglPO: r.tglPO, noReff: r.noReff, admUser: r.admUser, admTanggal: r.admTanggal, items: [], totalOut: 0, totalIn: 0 }
+    custMap[c]._txMap[txKey].items.push(r)
+    custMap[c]._txMap[txKey].totalOut += r.qtyOut||0
+    custMap[c]._txMap[txKey].totalIn += r.qtyIn||0
+  }
+  // Finalize groups: count = jumlah transaksi unik, batalCount = transaksi yang semua itemnya batal
+  for (const c of Object.keys(custMap)) {
+    const groups = Object.values(custMap[c]._txMap)
+      .map(g => ({ ...g, batal: g.items.every(it => it.batal) }))
+      .sort((a,b) => a.tglPO.split('/').reverse().join('').localeCompare(b.tglPO.split('/').reverse().join('')))
+    custMap[c].txGroups = groups
+    custMap[c].count = groups.length
+    custMap[c].batalCount = groups.filter(g => g.batal).length
+    delete custMap[c]._txMap
   }
   const custList = Object.values(custMap).sort((a,b)=>sortBy==='count'?b.count-a.count:b.totalOut-a.totalOut)
   const selected = selectedCust ? custMap[selectedCust] : null
@@ -408,7 +423,7 @@ function BpbRjDashboard({ rows, onClose }) {
   const exportAll = async () => {
     const XLSX = await import('xlsx')
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(custList.map(c=>({'Kode Customer':c.kodeCust,'Jumlah BPB/R.j':c.count,'Total QTY OUT':c.totalOut,'Total QTY IN':c.totalIn}))),'Summary per Customer')
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(custList.map(c=>({'Kode Customer':c.kodeCust,'Jumlah Transaksi BPB/R.j':c.count,'Jumlah Baris Item':c.transactions.length,'Total QTY OUT':c.totalOut,'Total QTY IN':c.totalIn}))),'Summary per Customer')
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Tgl PO':r.tglPO,'No Transaksi':r.noTx,'Cust/Supp':r.kodeCust,'No Reff':r.noReff,'QTY OUT':r.qtyOut||0,'QTY IN':r.qtyIn||0,'Saldo':r.saldo,'User ADM':r.admUser,'Tgl Input':r.admTanggal,'Status':r.batal?'Batal/Ganti Barang':'Aktif'}))),'Semua BPB-RJ')
     XLSX.writeFile(wb,`bpb_rj_dashboard_${Date.now()}.xlsx`)
   }
@@ -417,7 +432,7 @@ function BpbRjDashboard({ rows, onClose }) {
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.dashModal} onClick={e=>e.stopPropagation()}>
         <div className={styles.modalHeader}>
-          <div><div className={styles.modalKode} style={{color:'var(--warn)'}}>📦 Dashboard BPB/R.j — Analisis Customer</div><div className={styles.modalDesc}>{rows.length} transaksi · {custList.length} customer</div></div>
+          <div><div className={styles.modalKode} style={{color:'var(--warn)'}}>📦 Dashboard BPB/R.j — Analisis Customer</div><div className={styles.modalDesc}>{custList.reduce((s,c)=>s+c.count,0)} transaksi · {rows.length} baris item · {custList.length} customer</div></div>
           <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
             <button className={styles.btnExportSmall} onClick={exportAll}>↓ Export Semua</button>
             <button className={styles.modalClose} onClick={onClose}>✕</button>
@@ -456,7 +471,7 @@ function BpbRjDashboard({ rows, onClose }) {
             ):(
               <>
                 <div className={styles.custDetailHeader}>
-                  <div><div className={styles.custDetailKode}>{selected.kodeCust}</div><div className={styles.custDetailSub}>{selected.count} transaksi BPB/R.j</div></div>
+                  <div><div className={styles.custDetailKode}>{selected.kodeCust}</div><div className={styles.custDetailSub}>{selected.count} transaksi · {selected.transactions.length} baris item</div></div>
                   <button className={styles.btnExportSmall} onClick={()=>exportCust(selected)}>↓ Export</button>
                 </div>
                 <div className={styles.custDetailStats}>
@@ -483,25 +498,28 @@ function BpbRjDashboard({ rows, onClose }) {
                 <div className={styles.custTxWrap}>
                   <table className={styles.modalTable}>
                     <thead><tr>
-                      <th className={styles.mth}>#</th><th className={styles.mth}>Tgl PO</th><th className={styles.mth}>Kode Barang</th>
-                      <th className={styles.mth}>Deskripsi</th><th className={styles.mth}>No Transaksi</th><th className={styles.mth}>No Reff</th>
+                      <th className={styles.mth}>#</th><th className={styles.mth}>Tgl PO</th>
+                      <th className={styles.mth}>No Transaksi</th><th className={styles.mth}>No Reff</th>
+                      <th className={styles.mth}>Kode Barang</th><th className={styles.mth}>Deskripsi</th>
                       <th className={`${styles.mth} ${styles.alignRight}`}>QTY OUT</th><th className={`${styles.mth} ${styles.alignRight}`}>QTY IN</th>
                       <th className={styles.mth}>User ADM</th><th className={styles.mth}>Tgl Input</th>
                     </tr></thead>
                     <tbody>
-                      {selected.transactions.sort((a,b)=>a.tglPO.split('/').reverse().join('').localeCompare(b.tglPO.split('/').reverse().join(''))).map((r,i)=>(
-                        <tr key={i} className={`${styles.mtr} ${styles.mtrBpbRj}`}>
-                          <td className={`${styles.mtd} ${styles.tdNum}`}>{i+1}</td>
-                          <td className={`${styles.mtd} ${styles.tdDate}`}>{r.tglPO}</td>
-                          <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.kodeBarang}</td>
-                          <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
-                          <td className={`${styles.mtd} ${styles.tdNoTx}`}>{r.noTx} {r.batal&&<span className={styles.badgeMuted}>⊘ Batal</span>}</td>
-                          <td className={`${styles.mtd} ${styles.tdReff}`}>{r.noReff}</td>
-                          <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyOut>0?styles.colOut:styles.colMuted}`}>{r.qtyOut>0?fmt(r.qtyOut):'—'}</td>
-                          <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyIn>0?styles.colIn:styles.colMuted}`}>{r.qtyIn>0?fmt(r.qtyIn):'—'}</td>
-                          <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.admUser}</td>
-                          <td className={`${styles.mtd} ${styles.tdAdmDate}`}>{r.admTanggal}</td>
-                        </tr>
+                      {selected.txGroups.map((g, gi) => (
+                        g.items.map((r, ii) => (
+                          <tr key={`${gi}-${ii}`} className={`${styles.mtr} ${styles.mtrBpbRj} ${ii===0?styles.txGroupStart:''}`}>
+                            {ii===0 && <td className={`${styles.mtd} ${styles.tdNum}`} rowSpan={g.items.length}>{gi+1}</td>}
+                            {ii===0 && <td className={`${styles.mtd} ${styles.tdDate}`} rowSpan={g.items.length}>{g.tglPO}</td>}
+                            {ii===0 && <td className={`${styles.mtd} ${styles.tdNoTx}`} rowSpan={g.items.length}>{g.noTx} {g.batal&&<span className={styles.badgeMuted}>⊘ Batal</span>}{g.items.length>1&&<span className={styles.multiItemBadge}>{g.items.length} item</span>}</td>}
+                            {ii===0 && <td className={`${styles.mtd} ${styles.tdReff}`} rowSpan={g.items.length}>{g.noReff}</td>}
+                            <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.kodeBarang}</td>
+                            <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
+                            <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyOut>0?styles.colOut:styles.colMuted}`}>{r.qtyOut>0?fmt(r.qtyOut):'—'}</td>
+                            <td className={`${styles.mtd} ${styles.alignRight} ${r.qtyIn>0?styles.colIn:styles.colMuted}`}>{r.qtyIn>0?fmt(r.qtyIn):'—'}</td>
+                            {ii===0 && <td className={`${styles.mtd} ${styles.tdAdmUser}`} rowSpan={g.items.length}>{g.admUser}</td>}
+                            {ii===0 && <td className={`${styles.mtd} ${styles.tdAdmDate}`} rowSpan={g.items.length}>{g.admTanggal}</td>}
+                          </tr>
+                        ))
                       ))}
                     </tbody>
                   </table>

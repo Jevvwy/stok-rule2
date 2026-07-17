@@ -298,3 +298,7 @@
 /* Batal badges */
 .badgeMuted { background: rgba(90,102,90,0.2); color: var(--text3); border-radius: 3px; padding: 1px 6px; font-size: 9px; font-weight: 700; }
 .tlBadgeBatal { background: rgba(90,102,90,0.2); color: var(--text3); border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: 700; white-space: nowrap; text-decoration: line-through; text-decoration-color: rgba(90,102,90,0.5); }
+
+/* Transaction grouping */
+.txGroupStart .mtd { border-top: 2px solid var(--border2); }
+.multiItemBadge { background: rgba(64,196,255,0.15); color: var(--info); border-radius: 3px; padding: 1px 6px; font-size: 9px; font-weight: 700; margin-left: 6px; }

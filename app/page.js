@@ -372,15 +372,29 @@ function BeliNklDashboard({ rows, onClose }) {
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
 
-  const [filter, setFilter] = useState('ALL') // ALL | SAMEDAY | LATE | NOSO
+  const [filter, setFilter] = useState('ALL') // ALL | AFTER | BEFORE | NOSO
   const [search, setSearch] = useState('')
 
-  const catOf = (r) => r.soDate === null ? 'NOSO' : r.soPosisi === 'SETELAH' ? 'AFTER' : 'BEFORE'
-  const soAfter = rows.filter(r => catOf(r) === 'AFTER')
-  const soBefore = rows.filter(r => catOf(r) === 'BEFORE')
-  const noSO = rows.filter(r => catOf(r) === 'NOSO')
+  // ── Month range slider ──
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
+  const monthKey = (tgl) => { const p = tgl.split('/'); return `${p[2]}-${p[1]}` } // YYYY-MM (sortable)
+  const fmtMonth = (k) => { const [y, m] = k.split('-'); return `${MONTH_NAMES[parseInt(m)-1]} ${y}` }
+  const months = [...new Set(rows.map(r => monthKey(r.tglPO)))].sort()
+  const [rStart, setRStart] = useState(0)
+  const [rEnd, setREnd] = useState(months.length - 1)
 
-  const filtered = rows.filter(r => {
+  const inRange = (r) => {
+    const mi = months.indexOf(monthKey(r.tglPO))
+    return mi >= rStart && mi <= rEnd
+  }
+  const rangeRows = rows.filter(inRange)
+
+  const catOf = (r) => r.soDate === null ? 'NOSO' : r.soPosisi === 'SETELAH' ? 'AFTER' : 'BEFORE'
+  const soAfter = rangeRows.filter(r => catOf(r) === 'AFTER')
+  const soBefore = rangeRows.filter(r => catOf(r) === 'BEFORE')
+  const noSO = rangeRows.filter(r => catOf(r) === 'NOSO')
+
+  const filtered = rangeRows.filter(r => {
     if (filter !== 'ALL' && catOf(r) !== filter) return false
     if (search && !r.kodeBarang.toLowerCase().includes(search.toLowerCase()) &&
         !r.deskripsi.toLowerCase().includes(search.toLowerCase()) &&
@@ -429,6 +443,43 @@ function BeliNklDashboard({ rows, onClose }) {
           </div>
         </div>
 
+        {months.length > 1 && (
+          <div className={styles.rangeSection}>
+            <div className={styles.rangeLabel}>
+              📅 Periode: <span className={styles.rangeLabelVal}>{fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}</span>
+              <span className={styles.rangeCount}>({rangeRows.length} transaksi)</span>
+            </div>
+            <div className={styles.rangeSliders}>
+              <div className={styles.rangeTrack}>
+                <div className={styles.rangeTrackFill} style={{
+                  left: `${(rStart/(months.length-1))*100}%`,
+                  width: `${((rEnd-rStart)/(months.length-1))*100}%`,
+                }} />
+              </div>
+              <input type="range" min={0} max={months.length-1} value={rStart}
+                onChange={e=>setRStart(Math.min(parseInt(e.target.value), rEnd))}
+                className={styles.rangeInput} />
+              <input type="range" min={0} max={months.length-1} value={rEnd}
+                onChange={e=>setREnd(Math.max(parseInt(e.target.value), rStart))}
+                className={styles.rangeInput} />
+            </div>
+            <div className={styles.rangeTicks}>
+              {months.map((m,i)=>(
+                <span key={m}
+                  className={`${styles.rangeTick} ${i>=rStart&&i<=rEnd?styles.rangeTickActive:''}`}
+                  onClick={()=>{ 
+                    // Klik bulan: kalau di luar range, extend; kalau klik ujung, bisa mengecilkan
+                    if (i < rStart) setRStart(i)
+                    else if (i > rEnd) setREnd(i)
+                    else { setRStart(i); setREnd(i) }
+                  }}>
+                  {fmtMonth(m)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className={styles.modalStats}>
           <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('AFTER')}>
             <span className={styles.modalStatLabel}>✓ SO Setelah Barang Masuk</span>
@@ -447,8 +498,8 @@ function BeliNklDashboard({ rows, onClose }) {
           </div>
           <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('ALL')}>
             <span className={styles.modalStatLabel}>Total Beli NKL</span>
-            <span className={styles.modalStatVal}>{rows.length}</span>
-            <span className={styles.modalStatSub}>Semua</span>
+            <span className={styles.modalStatVal}>{rangeRows.length}</span>
+            <span className={styles.modalStatSub}>Dalam periode terpilih</span>
           </div>
         </div>
 

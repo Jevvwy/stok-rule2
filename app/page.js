@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, getBeliNklWithSO, getSOCompliance } from './parser'
+import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, getBeliNklWithSO, getSOCompliance, parseSOCsv, groupSOByKode } from './parser'
 import styles from './page.module.css'
 
 const PASSWORD = 'gasemuatau'
@@ -365,7 +365,7 @@ function AdjDashboard({ analysis, onClose }) {
 }
 
 // ── Kepatuhan SO JUKLAK Dashboard ────────────────────────────────────────────
-function ComplianceDashboard({ compliance, onClose }) {
+function ComplianceDashboard({ compliance, hasSOFile, onClose }) {
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', h)
@@ -440,6 +440,11 @@ function ComplianceDashboard({ compliance, onClose }) {
             <button className={styles.modalClose} onClick={onClose}>✕</button>
           </div>
         </div>
+        {!hasSOFile && (
+          <div className={styles.soWarnBanner}>
+            ⚠ File SO Harian belum diupload — SO dengan hasil PAS tidak tercatat di kartu stok, sehingga penilaian di bawah bisa salah menuduh "melanggar". Upload export SO Harian (CSV) di halaman utama untuk penilaian akurat.
+          </div>
+        )}
 
         <div className={styles.modalStats}>
           <div className={styles.modalStat}>
@@ -505,7 +510,7 @@ function ComplianceDashboard({ compliance, onClose }) {
 }
 
 // ── Beli NKL vs S.O Rutin Dashboard (per kode barang per bulan) ──────────────
-function BeliNklDashboard({ rows, onClose }) {
+function BeliNklDashboard({ rows, hasSOFile, onClose }) {
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', h)
@@ -581,6 +586,11 @@ function BeliNklDashboard({ rows, onClose }) {
             <button className={styles.modalClose} onClick={onClose}>✕</button>
           </div>
         </div>
+        {!hasSOFile && (
+          <div className={styles.soWarnBanner}>
+            ⚠ File SO Harian belum diupload — SO dengan hasil PAS tidak tercatat di kartu stok, sehingga status "Tanpa SO" di bawah bisa keliru. Upload export SO Harian (CSV) di halaman utama untuk hasil akurat.
+          </div>
+        )}
 
         {months.length > 1 && (
           <div className={styles.rangeSection}>
@@ -978,7 +988,18 @@ export default function Home() {
   const [showAdj,setShowAdj]=useState(false)
   const [showBeliNkl,setShowBeliNkl]=useState(false)
   const [showCompliance,setShowCompliance]=useState(false)
+  const [soData,setSoData]=useState(null)
+  const [soFileName,setSoFileName]=useState(null)
   const fileRef=useRef()
+  const soFileRef=useRef()
+
+  const processSOFile=useCallback((file)=>{
+    if(!file||!file.name.toLowerCase().endsWith('.csv')){alert('Harap upload file .csv export SO Harian');return}
+    setSoFileName(file.name)
+    const reader=new FileReader()
+    reader.onload=(e)=>{try{setSoData(parseSOCsv(e.target.result,cleanKode))}catch(err){alert('Error SO: '+err.message)}}
+    reader.readAsText(file,'utf-8')
+  },[cleanKode])
 
   const processFile=useCallback((file)=>{
     if(!file||!file.name.endsWith('.txt')){alert('Harap upload file .txt');return}
@@ -995,8 +1016,9 @@ export default function Home() {
   const lambatRows=data?getBeliNklLambat(data):[]
   const bpbRjRows=data?getBpbRj(data):[]
   const adjAnalysis=data?getAdjAnalysis(data):[]
-  const beliNklRows=data?getBeliNklWithSO(data):[]
-  const compliance=data?getSOCompliance(data):{months:[],rows:[]}
+  const soMap=soData?groupSOByKode(soData):null
+  const beliNklRows=data?getBeliNklWithSO(data,soMap):[]
+  const compliance=data?getSOCompliance(data,soMap):{months:[],rows:[]}
   const complianceLanggar=compliance.rows.reduce((s,r)=>s+r.langgarCount,0)
   const adjNoMatch=adjAnalysis.filter(r=>r.status==='NO_ADJ')
 
@@ -1043,6 +1065,10 @@ export default function Home() {
           <div className={styles.fileTag}><span className={styles.fileTagIcon}>▣</span>{fileName}</div>
           <label className={styles.toggle}><input type="checkbox" checked={cleanKode} onChange={e=>setCleanKode(e.target.checked)} /><span className={styles.toggleTrack} /><span className={styles.toggleLabel}>Clean Kode Barang</span></label>
           <button className={styles.btnReupload} onClick={()=>{setData(null);setFileName(null);setSearch('')}}>↺ Ganti File</button>
+          <input ref={soFileRef} type="file" accept=".csv" style={{display:'none'}} onChange={e=>processSOFile(e.target.files[0])} />
+          {!soData
+            ? <button className={styles.btnSO} onClick={()=>soFileRef.current.click()} title="Kartu stok tidak mencatat SO hasil PAS — upload export SO untuk analisis akurat">+ Upload SO Harian (CSV)</button>
+            : <div className={styles.fileTag} style={{borderColor:'rgba(64,196,255,0.4)'}}><span style={{color:'var(--info)'}}>📋</span>{soFileName} · {soData.length} SO<button className={styles.soRemove} onClick={()=>{setSoData(null);setSoFileName(null)}}>✕</button></div>}
           <div className={styles.clickHint}>💡 Klik baris untuk lihat detail transaksi</div>
         </div>)}
         {stats&&(<div className={styles.stats}>
@@ -1077,8 +1103,8 @@ export default function Home() {
       {showLambat&&<LambatModal rows={lambatRows} onClose={()=>setShowLambat(false)} />}
       {showBpbRj&&<BpbRjDashboard rows={bpbRjRows} onClose={()=>setShowBpbRj(false)} />}
       {showAdj&&<AdjDashboard analysis={adjAnalysis} onClose={()=>setShowAdj(false)} />}
-      {showBeliNkl&&<BeliNklDashboard rows={beliNklRows} onClose={()=>setShowBeliNkl(false)} />}
-      {showCompliance&&<ComplianceDashboard compliance={compliance} onClose={()=>setShowCompliance(false)} />}
+      {showBeliNkl&&<BeliNklDashboard rows={beliNklRows} hasSOFile={!!soData} onClose={()=>setShowBeliNkl(false)} />}
+      {showCompliance&&<ComplianceDashboard compliance={compliance} hasSOFile={!!soData} onClose={()=>setShowCompliance(false)} />}
     </div>
   )
 }

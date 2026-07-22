@@ -354,16 +354,25 @@ function parseDMY(d) {
   return new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]))
 }
 
-export function getBeliNklWithSO(items) {
+export function getBeliNklWithSO(items, soMap = null) {
   // Dikelompokkan per KODE BARANG per BULAN (bukan per transaksi).
-  // Satu baris = satu item di satu bulan yang punya Beli nkl.
+  // Jika soMap (dari file SO Harian CSV) tersedia, gunakan itu — karena SO
+  // dengan hasil PAS tidak tercatat di kartu stok.
   const rows = []
   for (const item of items) {
-    const soEvents = item.transactions
-      .filter(t => (t.type || '').toUpperCase().includes('S.O'))
-      .map(t => ({ date: parseDMY(t.tglPO), tglPO: t.tglPO, noTx: t.noTx }))
-      .filter(e => e.date)
-      .sort((a, b) => a.date - b.date)
+    let soEvents
+    if (soMap && soMap[item.kodeBarang]) {
+      soEvents = soMap[item.kodeBarang]
+        .map(so => ({ date: parseDMY(so.tanggal), tglPO: so.tanggal, noTx: so.nomor, ket: so.ket }))
+        .filter(e => e.date)
+        .sort((a, b) => a.date - b.date)
+    } else {
+      soEvents = item.transactions
+        .filter(t => (t.type || '').toUpperCase().includes('S.O'))
+        .map(t => ({ date: parseDMY(t.tglPO), tglPO: t.tglPO, noTx: t.noTx }))
+        .filter(e => e.date)
+        .sort((a, b) => a.date - b.date)
+    }
 
     // Kelompokkan Beli nkl per bulan
     const byMonth = {}
@@ -421,7 +430,7 @@ export function getBeliNklWithSO(items) {
 //  b. Ada transaksi keluar barang                → SO minimal 1 bulan sekali (301023)
 //  c. Tidak ada transaksi keluar masuk           → SO minimal 2 bulan sekali (301023)
 // Pengecualian: jika saldo SELALU >= 500 sepanjang bulan → tidak wajib (khusus besi).
-export function getSOCompliance(items) {
+export function getSOCompliance(items, soMap = null) {
   // Kumpulkan seluruh rentang bulan dari semua transaksi di file
   const allMonthKeys = new Set()
   for (const item of items) {
@@ -471,7 +480,17 @@ export function getSOCompliance(items) {
 
       const isSORutin = (t) => (t.type || '').toUpperCase().includes('S.O')
       const isAdj = (t) => (t.jenisTrs || '').toLowerCase().includes('adj')
-      const adaSO = txs.some(isSORutin)
+      // SO dari file CSV (mencakup hasil PAS) diprioritaskan; fallback ke kartu stok
+      let adaSO
+      if (soMap) {
+        const soList = soMap[item.kodeBarang] || []
+        adaSO = soList.some(so => {
+          const p = so.tanggal.split('/')
+          return p.length >= 3 && `${p[2]}-${p[1]}` === mk
+        })
+      } else {
+        adaSO = txs.some(isSORutin)
+      }
       const adaMasuk = txs.some(t => t.isBeliNkl)
       const adaKeluar = txs.some(t => t.out > 0 && !isSORutin(t) && !isAdj(t))
 
@@ -510,4 +529,48 @@ export function getSOCompliance(items) {
   // Item dengan pelanggaran terbanyak di atas
   rows.sort((a, b) => b.langgarCount - a.langgarCount)
   return { months, rows }
+}
+
+// ── SO Harian (Stock Opname) CSV parser ──────────────────────────────────────
+// PENTING: Kartu stok hanya mencatat SO yang ada selisih (KRG/LBH).
+// SO dengan hasil PAS tidak muncul di kartu stok — hanya ada di file export SO ini.
+// Format: Nomor;S1;S2;Tanggal;Nama;QHas;QtyS;QSel;KET;Catatan
+export function parseSOCsv(text, cleanKode = true) {
+  const lines = text.split(/\r?\n/)
+  const rows = []
+  for (const ln of lines) {
+    if (!ln.includes(';')) continue
+    const parts = ln.split(';').map(s => s.trim())
+    if (parts.length < 9) continue
+    if (parts[0].startsWith('Nomor')) continue
+    if (!/^[\d.]+$/.test(parts[0])) continue
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(parts[3])) continue
+
+    const namaParts = parts[4].split(/\s+/)
+    let kode = namaParts[0] || ''
+    const nama = namaParts.slice(1).join(' ')
+    if (cleanKode) kode = kode.replace(/-/g, '').replace(/^0+/, '')
+
+    const num = (s) => {
+      s = String(s).replace(/[^0-9\-]/g, '')
+      return s === '' || s === '-' ? 0 : parseInt(s, 10)
+    }
+
+    rows.push({
+      nomor: parts[0], s1: parts[1], s2: parts[2], tanggal: parts[3],
+      kodeBarang: kode, nama,
+      qHas: num(parts[5]), qtyS: num(parts[6]), qSel: num(parts[7]),
+      ket: parts[8].trim(), catatan: (parts[9] || '').trim(),
+    })
+  }
+  return rows
+}
+
+export function groupSOByKode(soRows) {
+  const map = {}
+  for (const r of soRows) {
+    if (!map[r.kodeBarang]) map[r.kodeBarang] = []
+    map[r.kodeBarang].push(r)
+  }
+  return map
 }

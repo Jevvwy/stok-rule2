@@ -367,30 +367,37 @@ export function getBeliNklWithSO(items) {
     for (const t of item.transactions) {
       if (!t.isBeliNkl) continue
       const beliDate = parseDMY(t.tglPO)
-      let nearestSO = null, soGapDays = null
+
+      // Penilaian per BULAN: SO di bulan yang sama = terhitung ada SO,
+      // walaupun SO terjadi sebelum barang masuk.
+      let soDate = null, soNoTx = null, soGapDays = null, soPosisi = null
       if (beliDate) {
-        for (const so of soEvents) {
-          if (so.date >= beliDate) {
-            nearestSO = so
-            soGapDays = Math.round((so.date - beliDate) / 86400000)
-            break
-          }
+        const beliMonth = beliDate.getMonth(), beliYear = beliDate.getFullYear()
+        const soSameMonth = soEvents.filter(so =>
+          so.date.getMonth() === beliMonth && so.date.getFullYear() === beliYear)
+
+        if (soSameMonth.length > 0) {
+          // Prioritas: SO setelah/sama dengan tanggal beli. Kalau tidak ada, ambil SO terakhir sebelum beli.
+          const after = soSameMonth.find(so => so.date >= beliDate)
+          const chosen = after || soSameMonth[soSameMonth.length - 1]
+          soDate = chosen.tglPO
+          soNoTx = chosen.noTx
+          soGapDays = Math.round((chosen.date - beliDate) / 86400000)
+          soPosisi = soGapDays >= 0 ? 'SETELAH' : 'SEBELUM'
         }
       }
+
       rows.push({
         kodeBarang: item.kodeBarang, deskripsi: item.deskripsi, unit: item.unit,
         tglPO: t.tglPO, waktu: t.waktu, noTx: t.noTx,
         kodeCust: t.kodeCust, noReff: t.noReff, type: t.type,
         qtyIn: t.in, saldo: t.saldo,
         admUser: t.admUser, admTanggal: t.admTanggal,
-        soDate: nearestSO ? nearestSO.tglPO : null,
-        soNoTx: nearestSO ? nearestSO.noTx : null,
-        soGapDays,
+        soDate, soNoTx, soGapDays, soPosisi,
         totalSOItem: soEvents.length,
       })
     }
   }
-  // Sort by tanggal beli
   return rows.sort((a, b) =>
     a.tglPO.split('/').reverse().join('').localeCompare(b.tglPO.split('/').reverse().join('')))
 }

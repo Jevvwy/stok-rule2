@@ -401,3 +401,100 @@ export function getBeliNklWithSO(items) {
   return rows.sort((a, b) =>
     a.tglPO.split('/').reverse().join('').localeCompare(b.tglPO.split('/').reverse().join('')))
 }
+
+// ── Kepatuhan SO — JUKLAK 031024 ────────────────────────────────────────────
+// Aturan: stock besi qty < 500 (dan profile qty berapapun — dianalisa manual) wajib SO:
+//  a. Ada kedatangan barang (Beli nkl)          → wajib SO bulan itu
+//  b. Ada transaksi keluar barang                → SO minimal 1 bulan sekali (301023)
+//  c. Tidak ada transaksi keluar masuk           → SO minimal 2 bulan sekali (301023)
+// Pengecualian: jika saldo SELALU >= 500 sepanjang bulan → tidak wajib (khusus besi).
+export function getSOCompliance(items) {
+  // Kumpulkan seluruh rentang bulan dari semua transaksi di file
+  const allMonthKeys = new Set()
+  for (const item of items) {
+    for (const t of item.transactions) {
+      const p = t.tglPO.split('/')
+      if (p.length >= 3) allMonthKeys.add(`${p[2]}-${p[1]}`)
+    }
+  }
+  const sortedKeys = [...allMonthKeys].sort()
+  if (sortedKeys.length === 0) return { months: [], rows: [] }
+
+  // Generate rentang bulan penuh dari awal sampai akhir (termasuk bulan kosong)
+  const [startY, startM] = sortedKeys[0].split('-').map(Number)
+  const [endY, endM] = sortedKeys[sortedKeys.length - 1].split('-').map(Number)
+  const months = []
+  let y = startY, m = startM
+  while (y < endY || (y === endY && m <= endM)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`)
+    m++; if (m > 12) { m = 1; y++ }
+  }
+
+  const monthOf = (tgl) => { const p = tgl.split('/'); return `${p[2]}-${p[1]}` }
+
+  const rows = []
+  for (const item of items) {
+    // Kelompokkan transaksi per bulan
+    const byMonth = {}
+    for (const t of item.transactions) {
+      const k = monthOf(t.tglPO)
+      if (!byMonth[k]) byMonth[k] = []
+      byMonth[k].push(t)
+    }
+
+    let lastSaldo = typeof item.saldoAwal === 'number' ? item.saldoAwal : null
+    let prevHasSO = null // null = tidak diketahui (sebelum data dimulai)
+    const cells = []
+
+    for (const mk of months) {
+      const txs = byMonth[mk] || []
+      const saldos = txs.map(t => t.saldo).filter(s => typeof s === 'number')
+
+      // Saldo minimum bulan ini = min(saldo masuk bulan, semua saldo transaksi)
+      const candidates = []
+      if (typeof lastSaldo === 'number') candidates.push(lastSaldo)
+      candidates.push(...saldos)
+      const minSaldo = candidates.length > 0 ? Math.min(...candidates) : null
+
+      const isSORutin = (t) => (t.type || '').toUpperCase().includes('S.O')
+      const isAdj = (t) => (t.jenisTrs || '').toLowerCase().includes('adj')
+      const adaSO = txs.some(isSORutin)
+      const adaMasuk = txs.some(t => t.isBeliNkl)
+      const adaKeluar = txs.some(t => t.out > 0 && !isSORutin(t) && !isAdj(t))
+
+      let status, alasan
+      if (minSaldo !== null && minSaldo >= 500) {
+        status = 'EXEMPT'
+        alasan = 'Saldo selalu ≥ 500 sepanjang bulan (khusus besi — profile tetap wajib, cek manual)'
+      } else if (adaMasuk) {
+        status = adaSO ? 'PATUH' : 'LANGGAR'
+        alasan = adaSO ? 'Ada kedatangan barang, SO dilakukan ✓' : 'Ada kedatangan barang tapi TIDAK ada SO (aturan a)'
+      } else if (adaKeluar) {
+        status = adaSO ? 'PATUH' : 'LANGGAR'
+        alasan = adaSO ? 'Ada barang keluar, SO dilakukan ✓' : 'Ada barang keluar tapi TIDAK ada SO bulan ini (aturan b — 301023)'
+      } else {
+        // Aturan c: tanpa mutasi, SO minimal 2 bulan sekali
+        if (adaSO) { status = 'PATUH'; alasan = 'Tanpa mutasi, SO dilakukan ✓' }
+        else if (prevHasSO === true) { status = 'PATUH'; alasan = 'Tanpa mutasi, SO bulan lalu masih meng-cover (aturan c — 2 bulan sekali)' }
+        else if (prevHasSO === null) { status = 'CEK'; alasan = 'Tanpa mutasi & tanpa SO — data bulan sebelumnya tidak tersedia, tidak bisa dinilai' }
+        else { status = 'LANGGAR'; alasan = '2 bulan berturut-turut tanpa mutasi dan TANPA SO (aturan c — 301023)' }
+      }
+
+      cells.push({ month: mk, status, alasan, minSaldo, adaSO, adaMasuk, adaKeluar })
+
+      // Update state untuk bulan berikutnya
+      if (saldos.length > 0) lastSaldo = saldos[saldos.length - 1]
+      prevHasSO = adaSO
+    }
+
+    rows.push({
+      kodeBarang: item.kodeBarang, deskripsi: item.deskripsi, unit: item.unit,
+      cells,
+      langgarCount: cells.filter(c => c.status === 'LANGGAR').length,
+    })
+  }
+
+  // Item dengan pelanggaran terbanyak di atas
+  rows.sort((a, b) => b.langgarCount - a.langgarCount)
+  return { months, rows }
+}

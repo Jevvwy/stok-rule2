@@ -1013,6 +1013,44 @@ export default function Home() {
   const handleSort=(key)=>{if(sortKey===key)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc')}}
   const exportExcel=async()=>{if(!data)return;const XLSX=await import('xlsx');const ws=XLSX.utils.json_to_sheet(data.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Saldo Awal':r.saldoAwal,'Total IN':r.totalIn,'Total OUT':r.totalOut,'Saldo Akhir':r.saldoAkhir,'Has Transactions':r.hasTx?'Ya':'Tidak'})));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Kartu Stok');XLSX.writeFile(wb,`kartu_stok_rule2_${Date.now()}.xlsx`)}
 
+  // Export flat: semua transaksi Beli NKL (format seperti kartu stok mentah)
+  const exportBeliNklFlat=async()=>{
+    if(!data)return
+    const XLSX=await import('xlsx')
+    const flat=[]
+    let no=0
+    for(const item of data){
+      for(const t of item.transactions){
+        if(!t.isBeliNkl)continue
+        no++
+        const admRaw=t.admUser&&t.admTanggal?`${t.admUser}-${t.admTanggal.replace('/','')}`:t.admUser||''
+        flat.push({
+          'No':no,
+          'Item':`${item.kodeBarang} ${item.deskripsi}  Unit: ${item.unit}`,
+          'Kode Barang':item.kodeBarang,
+          'Tgl':t.tglPO,
+          'Waktu':t.waktu||'',
+          'No Transaksi':t.noTx,
+          'TRS':t.jenisTrs,
+          'Cust/Supp':t.kodeCust||'',
+          'No Reff':t.noReff||'',
+          'Type':t.type||'',
+          'IN':t.in||0,
+          'OUT':t.out||0,
+          'Saldo':t.saldo!=null?t.saldo:'',
+          'ADM':admRaw,
+          'User ADM':t.admUser||'',
+          'Tgl Input':t.admTanggal||'',
+        })
+      }
+    }
+    const ws=XLSX.utils.json_to_sheet(flat)
+    ws['!cols']=[{wch:5},{wch:46},{wch:15},{wch:11},{wch:9},{wch:20},{wch:9},{wch:10},{wch:20},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:9},{wch:9}]
+    const wb=XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb,ws,'Beli NKL')
+    XLSX.writeFile(wb,`beli_nkl_${Date.now()}.xlsx`)
+  }
+
   const lambatRows=data?getBeliNklLambat(data):[]
   const bpbRjRows=data?getBpbRj(data):[]
   const adjAnalysis=data?getAdjAnalysis(data):[]
@@ -1050,6 +1088,7 @@ export default function Home() {
               {adjAnalysis.length>0&&<button className={styles.btnAdj} onClick={()=>setShowAdj(true)}>🔍 ADJ vs BPB/R.j {adjNoMatch.length>0&&`(${adjNoMatch.length} ⚠)`}</button>}
               {bpbRjRows.length>0&&<button className={styles.btnBpbRj} onClick={()=>setShowBpbRj(true)}>📦 BPB/R.j ({bpbRjRows.length})</button>}
               {lambatRows.length>0&&<button className={styles.btnLambat} onClick={()=>setShowLambat(true)}>⚠ Input Lambat ({lambatRows.length})</button>}
+              <button className={styles.btnExportAlt} onClick={exportBeliNklFlat}>↓ Beli NKL</button>
               <button className={styles.btnExport} onClick={exportExcel}>↓ Export Excel</button>
             </>}
           </div>

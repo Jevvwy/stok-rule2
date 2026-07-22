@@ -322,3 +322,15 @@
 .rangeTick { font-family: var(--font-mono); font-size: 10px; color: var(--text3); cursor: pointer; padding: 2px 6px; border-radius: 3px; transition: all 0.15s; user-select: none; }
 .rangeTick:hover { color: var(--accent); background: var(--accent-dim); }
 .rangeTickActive { color: var(--accent); font-weight: 700; background: var(--accent-dim); }
+
+/* ===== COMPLIANCE (JUKLAK) ===== */
+.btnCompliance { background: var(--info); color: #000; border: none; border-radius: 4px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 7px 16px; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+.btnCompliance:hover { opacity: 0.85; transform: translateY(-1px); }
+.alignCenter { text-align: center; }
+.compCellOk { display: inline-block; background: rgba(0,230,118,0.15); color: var(--accent); border-radius: 3px; padding: 2px 8px; font-size: 10px; font-weight: 700; cursor: help; }
+.compCellBad { display: inline-block; background: rgba(255,82,82,0.2); color: var(--danger); border-radius: 3px; padding: 2px 8px; font-size: 10px; font-weight: 700; cursor: help; }
+.compCellExempt { display: inline-block; background: rgba(90,102,90,0.15); color: var(--text3); border-radius: 3px; padding: 2px 5px; font-size: 9px; font-weight: 600; cursor: help; }
+.compCellUnknown { display: inline-block; background: rgba(255,171,64,0.12); color: var(--warn); border-radius: 3px; padding: 2px 8px; font-size: 10px; font-weight: 700; cursor: help; }
+.compStickyCol { position: sticky; left: 0; background: var(--surface); z-index: 5; }
+.compLegend { display: flex; gap: 16px; align-items: center; padding: 10px 20px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text2); font-family: var(--font-mono); flex-wrap: wrap; }
+.compLegend > span { display: flex; align-items: center; gap: 6px; }

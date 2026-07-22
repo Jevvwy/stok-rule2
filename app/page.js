@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis } from './parser'
+import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, getBeliNklWithSO } from './parser'
 import styles from './page.module.css'
 
 const PASSWORD = 'gasemuatau'
@@ -364,6 +364,131 @@ function AdjDashboard({ analysis, onClose }) {
   )
 }
 
+// ── Beli NKL vs S.O Rutin Dashboard ──────────────────────────────────────────
+function BeliNklDashboard({ rows, onClose }) {
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const [filter, setFilter] = useState('ALL') // ALL | SAMEDAY | LATE | NOSO
+  const [search, setSearch] = useState('')
+
+  const catOf = (r) => r.soGapDays === null ? 'NOSO' : r.soGapDays === 0 ? 'SAMEDAY' : 'LATE'
+  const sameDay = rows.filter(r => catOf(r) === 'SAMEDAY')
+  const late = rows.filter(r => catOf(r) === 'LATE')
+  const noSO = rows.filter(r => catOf(r) === 'NOSO')
+
+  const filtered = rows.filter(r => {
+    if (filter !== 'ALL' && catOf(r) !== filter) return false
+    if (search && !r.kodeBarang.toLowerCase().includes(search.toLowerCase()) &&
+        !r.deskripsi.toLowerCase().includes(search.toLowerCase()) &&
+        !(r.kodeCust||'').toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  const soBadge = (r) => {
+    if (r.soGapDays === null) return <span className={styles.badgeDanger}>Tanpa SO</span>
+    if (r.soGapDays === 0) return <span className={styles.badgeOk}>SO H+0</span>
+    if (r.soGapDays <= 2) return <span className={styles.badgeWarn}>SO H+{r.soGapDays}</span>
+    return <span className={styles.badgeDanger}>SO H+{r.soGapDays}</span>
+  }
+
+  const exportBeli = async () => {
+    const XLSX = await import('xlsx')
+    const ws = XLSX.utils.json_to_sheet(filtered.map(r => ({
+      'Kode Barang': r.kodeBarang, 'Deskripsi': r.deskripsi, 'Unit': r.unit,
+      'Tgl Beli': r.tglPO, 'No Transaksi': r.noTx, 'Supplier': r.kodeCust,
+      'No Reff': r.noReff, 'QTY IN': r.qtyIn, 'Saldo': r.saldo,
+      'User ADM': r.admUser, 'Tgl Input': r.admTanggal,
+      'SO Terdekat': r.soDate || 'TIDAK ADA', 'No SO': r.soNoTx || '—',
+      'Selisih Hari SO': r.soGapDays === null ? 'Tanpa SO' : `H+${r.soGapDays}`,
+      'Total SO Item Ini': r.totalSOItem,
+    })))
+    ws['!cols'] = [{wch:14},{wch:36},{wch:6},{wch:12},{wch:22},{wch:10},{wch:22},{wch:8},{wch:8},{wch:10},{wch:12},{wch:12},{wch:22},{wch:14},{wch:14}]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Beli NKL vs SO')
+    XLSX.writeFile(wb, `beli_nkl_vs_so_${Date.now()}.xlsx`)
+  }
+
+  return (
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.dashModal} onClick={e => e.stopPropagation()}>
+        <div className={styles.modalHeader}>
+          <div>
+            <div className={styles.modalKode} style={{color:'var(--accent)'}}>🛒 Beli NKL vs S.O Rutin</div>
+            <div className={styles.modalDesc}>Apakah BU menjalankan S.O Rutin saat ada barang masuk? {rows.length} transaksi Beli nkl</div>
+          </div>
+          <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+            <input className={styles.modalSearch} placeholder="Cari kode / supplier..." value={search} onChange={e=>setSearch(e.target.value)} />
+            <button className={styles.btnExportSmall} onClick={exportBeli}>↓ Export Excel</button>
+            <button className={styles.modalClose} onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className={styles.modalStats}>
+          <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('SAMEDAY')}>
+            <span className={styles.modalStatLabel}>✓ SO Hari Sama (H+0)</span>
+            <span className={`${styles.modalStatVal} ${styles.colIn}`}>{sameDay.length}</span>
+            <span className={styles.modalStatSub}>Disiplin</span>
+          </div>
+          <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('LATE')}>
+            <span className={styles.modalStatLabel}>SO Terlambat</span>
+            <span className={`${styles.modalStatVal} ${styles.colWarn}`}>{late.length}</span>
+            <span className={styles.modalStatSub}>SO ada tapi tidak hari itu</span>
+          </div>
+          <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('NOSO')}>
+            <span className={styles.modalStatLabel}>⚠ Tanpa SO Setelahnya</span>
+            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{noSO.length}</span>
+            <span className={styles.modalStatSub}>Barang masuk, tidak pernah di-SO</span>
+          </div>
+          <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('ALL')}>
+            <span className={styles.modalStatLabel}>Total Beli NKL</span>
+            <span className={styles.modalStatVal}>{rows.length}</span>
+            <span className={styles.modalStatSub}>Semua</span>
+          </div>
+        </div>
+
+        <div className={styles.modalTableWrap}>
+          {filtered.length === 0 ? <div className={styles.modalEmpty}>Tidak ada hasil</div> : (
+            <table className={styles.modalTable}>
+              <thead><tr>
+                <th className={styles.mth}>#</th>
+                <th className={styles.mth}>Tgl Beli</th>
+                <th className={styles.mth}>Kode Barang</th>
+                <th className={styles.mth}>Deskripsi</th>
+                <th className={styles.mth}>Supplier</th>
+                <th className={styles.mth}>No Transaksi</th>
+                <th className={`${styles.mth} ${styles.alignRight}`}>QTY IN</th>
+                <th className={styles.mth}>User ADM</th>
+                <th className={styles.mth}>SO Terdekat</th>
+                <th className={styles.mth}>Status SO</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr key={i} className={`${styles.mtr} ${r.soGapDays===null?styles.mtrLambat:r.soGapDays===0?styles.mtrAdj:''}`}>
+                    <td className={`${styles.mtd} ${styles.tdNum}`}>{i+1}</td>
+                    <td className={`${styles.mtd} ${styles.tdDate}`}>{r.tglPO}</td>
+                    <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.kodeBarang}</td>
+                    <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
+                    <td className={`${styles.mtd} ${styles.tdCust}`}>{r.kodeCust||'—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdNoTx}`}>{r.noTx}</td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${styles.colIn}`}>{r.qtyIn>0?fmt(r.qtyIn):'—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.admUser||'—'}</td>
+                    <td className={`${styles.mtd} ${styles.tdDate}`}>{r.soDate||'—'}</td>
+                    <td className={styles.mtd}>{soBadge(r)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── BPB/R.j Customer Dashboard ───────────────────────────────────────────────
 function BpbRjDashboard({ rows, onClose }) {
   useEffect(() => {
@@ -656,6 +781,7 @@ export default function Home() {
   const [showLambat,setShowLambat]=useState(false)
   const [showBpbRj,setShowBpbRj]=useState(false)
   const [showAdj,setShowAdj]=useState(false)
+  const [showBeliNkl,setShowBeliNkl]=useState(false)
   const fileRef=useRef()
 
   const processFile=useCallback((file)=>{
@@ -673,6 +799,7 @@ export default function Home() {
   const lambatRows=data?getBeliNklLambat(data):[]
   const bpbRjRows=data?getBpbRj(data):[]
   const adjAnalysis=data?getAdjAnalysis(data):[]
+  const beliNklRows=data?getBeliNklWithSO(data):[]
   const adjNoMatch=adjAnalysis.filter(r=>r.status==='NO_ADJ')
 
   const filteredData=data?data.filter(r=>!search||r.kodeBarang.toLowerCase().includes(search.toLowerCase())||r.deskripsi.toLowerCase().includes(search.toLowerCase())):[]
@@ -698,6 +825,7 @@ export default function Home() {
           <div className={styles.headerActions}>
             {data&&<>
               <input className={styles.search} placeholder="Cari kode / deskripsi..." value={search} onChange={e=>setSearch(e.target.value)} />
+              {beliNklRows.length>0&&<button className={styles.btnBeliNkl} onClick={()=>setShowBeliNkl(true)}>🛒 Beli NKL vs SO ({beliNklRows.filter(r=>r.soGapDays===null).length} ⚠)</button>}
               {adjAnalysis.length>0&&<button className={styles.btnAdj} onClick={()=>setShowAdj(true)}>🔍 ADJ vs BPB/R.j {adjNoMatch.length>0&&`(${adjNoMatch.length} ⚠)`}</button>}
               {bpbRjRows.length>0&&<button className={styles.btnBpbRj} onClick={()=>setShowBpbRj(true)}>📦 BPB/R.j ({bpbRjRows.length})</button>}
               {lambatRows.length>0&&<button className={styles.btnLambat} onClick={()=>setShowLambat(true)}>⚠ Input Lambat ({lambatRows.length})</button>}
@@ -750,6 +878,7 @@ export default function Home() {
       {showLambat&&<LambatModal rows={lambatRows} onClose={()=>setShowLambat(false)} />}
       {showBpbRj&&<BpbRjDashboard rows={bpbRjRows} onClose={()=>setShowBpbRj(false)} />}
       {showAdj&&<AdjDashboard analysis={adjAnalysis} onClose={()=>setShowAdj(false)} />}
+      {showBeliNkl&&<BeliNklDashboard rows={beliNklRows} onClose={()=>setShowBeliNkl(false)} />}
     </div>
   )
 }

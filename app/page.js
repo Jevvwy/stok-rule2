@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, getBeliNklWithSO } from './parser'
+import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, getBeliNklWithSO, getSOCompliance } from './parser'
 import styles from './page.module.css'
 
 const PASSWORD = 'gasemuatau'
@@ -358,6 +358,146 @@ function AdjDashboard({ analysis, onClose }) {
               </>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Kepatuhan SO JUKLAK Dashboard ────────────────────────────────────────────
+function ComplianceDashboard({ compliance, onClose }) {
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const [onlyLanggar, setOnlyLanggar] = useState(false)
+  const [search, setSearch] = useState('')
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
+  const fmtMonth = (k) => { const [y, m] = k.split('-'); return `${MONTH_NAMES[parseInt(m)-1]} ${y.slice(2)}` }
+
+  const { months, rows } = compliance
+
+  const filtered = rows.filter(r => {
+    if (onlyLanggar && r.langgarCount === 0) return false
+    if (search && !r.kodeBarang.toLowerCase().includes(search.toLowerCase()) &&
+        !r.deskripsi.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  const allCells = rows.flatMap(r => r.cells)
+  const totLanggar = allCells.filter(c => c.status === 'LANGGAR').length
+  const totPatuh = allCells.filter(c => c.status === 'PATUH').length
+  const totExempt = allCells.filter(c => c.status === 'EXEMPT').length
+  const itemLanggar = rows.filter(r => r.langgarCount > 0).length
+
+  const cellBadge = (c) => {
+    if (c.status === 'PATUH') return <span className={styles.compCellOk} title={c.alasan}>✓</span>
+    if (c.status === 'LANGGAR') return <span className={styles.compCellBad} title={c.alasan}>✗</span>
+    if (c.status === 'EXEMPT') return <span className={styles.compCellExempt} title={c.alasan}>≥500</span>
+    return <span className={styles.compCellUnknown} title={c.alasan}>?</span>
+  }
+
+  const exportComp = async () => {
+    const XLSX = await import('xlsx')
+    const flat = []
+    for (const r of filtered) {
+      for (const c of r.cells) {
+        flat.push({
+          'Kode Barang': r.kodeBarang, 'Deskripsi': r.deskripsi, 'Unit': r.unit,
+          'Bulan': fmtMonth(c.month),
+          'Saldo Min': c.minSaldo !== null ? c.minSaldo : '—',
+          'Ada Barang Masuk': c.adaMasuk ? 'Ya' : 'Tidak',
+          'Ada Barang Keluar': c.adaKeluar ? 'Ya' : 'Tidak',
+          'Ada SO': c.adaSO ? 'Ya' : 'Tidak',
+          'Status': c.status === 'PATUH' ? 'Patuh' : c.status === 'LANGGAR' ? 'MELANGGAR' : c.status === 'EXEMPT' ? 'Saldo ≥500' : 'Tidak bisa dinilai',
+          'Keterangan': c.alasan,
+        })
+      }
+    }
+    const ws = XLSX.utils.json_to_sheet(flat)
+    ws['!cols'] = [{wch:14},{wch:36},{wch:6},{wch:9},{wch:10},{wch:14},{wch:14},{wch:8},{wch:12},{wch:60}]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Kepatuhan SO')
+    XLSX.writeFile(wb, `kepatuhan_so_juklak_${Date.now()}.xlsx`)
+  }
+
+  return (
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.dashModal} onClick={e => e.stopPropagation()}>
+        <div className={styles.modalHeader}>
+          <div>
+            <div className={styles.modalKode} style={{color:'var(--info)'}}>📏 Kepatuhan SO — JUKLAK 031024</div>
+            <div className={styles.modalDesc}>
+              Saldo &lt;500 wajib SO: (a) ada barang masuk → SO bulan itu · (b) ada barang keluar → SO 1 bln sekali · (c) tanpa mutasi → SO 2 bln sekali. Item profile wajib berapapun qty — analisa jenis manual.
+            </div>
+          </div>
+          <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+            <input className={styles.modalSearch} placeholder="Cari kode / deskripsi..." value={search} onChange={e=>setSearch(e.target.value)} />
+            <button className={styles.btnExportSmall} onClick={exportComp}>↓ Export Excel</button>
+            <button className={styles.modalClose} onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className={styles.modalStats}>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>⚠ Pelanggaran</span>
+            <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{totLanggar}</span>
+            <span className={styles.modalStatSub}>{itemLanggar} item terlibat</span>
+          </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>✓ Patuh</span>
+            <span className={`${styles.modalStatVal} ${styles.colIn}`}>{totPatuh}</span>
+            <span className={styles.modalStatSub}>item-bulan</span>
+          </div>
+          <div className={styles.modalStat}>
+            <span className={styles.modalStatLabel}>Saldo ≥500</span>
+            <span className={styles.modalStatVal} style={{color:'var(--text3)'}}>{totExempt}</span>
+            <span className={styles.modalStatSub}>tidak wajib (besi)</span>
+          </div>
+          <div className={styles.modalStat}>
+            <label className={styles.toggle} style={{marginTop:'4px'}}>
+              <input type="checkbox" checked={onlyLanggar} onChange={e=>setOnlyLanggar(e.target.checked)} />
+              <span className={styles.toggleTrack} />
+              <span className={styles.toggleLabel}>Hanya pelanggaran</span>
+            </label>
+          </div>
+        </div>
+
+        <div className={styles.modalTableWrap}>
+          {filtered.length === 0 ? <div className={styles.modalEmpty}>Tidak ada hasil</div> : (
+            <table className={styles.modalTable}>
+              <thead><tr>
+                <th className={`${styles.mth} ${styles.compStickyCol}`}>Kode Barang</th>
+                <th className={styles.mth}>Deskripsi</th>
+                {months.map(mk => <th key={mk} className={`${styles.mth} ${styles.alignCenter}`}>{fmtMonth(mk)}</th>)}
+                <th className={`${styles.mth} ${styles.alignRight}`}>⚠</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr key={i} className={`${styles.mtr} ${r.langgarCount>0?styles.mtrLambat:''}`}>
+                    <td className={`${styles.mtd} ${styles.tdAdmUser} ${styles.compStickyCol}`}>{r.kodeBarang}</td>
+                    <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
+                    {r.cells.map(c => (
+                      <td key={c.month} className={`${styles.mtd} ${styles.alignCenter}`}>{cellBadge(c)}</td>
+                    ))}
+                    <td className={`${styles.mtd} ${styles.alignRight} ${r.langgarCount>0?styles.colDanger:styles.colMuted}`}>
+                      {r.langgarCount>0?r.langgarCount:'—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className={styles.compLegend}>
+          <span><span className={styles.compCellOk}>✓</span> Patuh</span>
+          <span><span className={styles.compCellBad}>✗</span> Melanggar</span>
+          <span><span className={styles.compCellExempt}>≥500</span> Saldo selalu ≥500 (besi tidak wajib)</span>
+          <span><span className={styles.compCellUnknown}>?</span> Tidak bisa dinilai</span>
+          <span style={{marginLeft:'auto',color:'var(--text3)'}}>Hover sel untuk keterangan</span>
         </div>
       </div>
     </div>
@@ -835,6 +975,7 @@ export default function Home() {
   const [showBpbRj,setShowBpbRj]=useState(false)
   const [showAdj,setShowAdj]=useState(false)
   const [showBeliNkl,setShowBeliNkl]=useState(false)
+  const [showCompliance,setShowCompliance]=useState(false)
   const fileRef=useRef()
 
   const processFile=useCallback((file)=>{
@@ -853,6 +994,8 @@ export default function Home() {
   const bpbRjRows=data?getBpbRj(data):[]
   const adjAnalysis=data?getAdjAnalysis(data):[]
   const beliNklRows=data?getBeliNklWithSO(data):[]
+  const compliance=data?getSOCompliance(data):{months:[],rows:[]}
+  const complianceLanggar=compliance.rows.reduce((s,r)=>s+r.langgarCount,0)
   const adjNoMatch=adjAnalysis.filter(r=>r.status==='NO_ADJ')
 
   const filteredData=data?data.filter(r=>!search||r.kodeBarang.toLowerCase().includes(search.toLowerCase())||r.deskripsi.toLowerCase().includes(search.toLowerCase())):[]
@@ -878,6 +1021,7 @@ export default function Home() {
           <div className={styles.headerActions}>
             {data&&<>
               <input className={styles.search} placeholder="Cari kode / deskripsi..." value={search} onChange={e=>setSearch(e.target.value)} />
+              {compliance.rows.length>0&&<button className={styles.btnCompliance} onClick={()=>setShowCompliance(true)}>📏 JUKLAK SO {complianceLanggar>0&&`(${complianceLanggar} ⚠)`}</button>}
               {beliNklRows.length>0&&<button className={styles.btnBeliNkl} onClick={()=>setShowBeliNkl(true)}>🛒 Beli NKL vs SO ({beliNklRows.filter(r=>r.soDate===null).length} ⚠)</button>}
               {adjAnalysis.length>0&&<button className={styles.btnAdj} onClick={()=>setShowAdj(true)}>🔍 ADJ vs BPB/R.j {adjNoMatch.length>0&&`(${adjNoMatch.length} ⚠)`}</button>}
               {bpbRjRows.length>0&&<button className={styles.btnBpbRj} onClick={()=>setShowBpbRj(true)}>📦 BPB/R.j ({bpbRjRows.length})</button>}
@@ -932,6 +1076,7 @@ export default function Home() {
       {showBpbRj&&<BpbRjDashboard rows={bpbRjRows} onClose={()=>setShowBpbRj(false)} />}
       {showAdj&&<AdjDashboard analysis={adjAnalysis} onClose={()=>setShowAdj(false)} />}
       {showBeliNkl&&<BeliNklDashboard rows={beliNklRows} onClose={()=>setShowBeliNkl(false)} />}
+      {showCompliance&&<ComplianceDashboard compliance={compliance} onClose={()=>setShowCompliance(false)} />}
     </div>
   )
 }

@@ -355,51 +355,64 @@ function parseDMY(d) {
 }
 
 export function getBeliNklWithSO(items) {
+  // Dikelompokkan per KODE BARANG per BULAN (bukan per transaksi).
+  // Satu baris = satu item di satu bulan yang punya Beli nkl.
   const rows = []
   for (const item of items) {
-    // Kumpulkan tanggal S.O Rutin untuk item ini
     const soEvents = item.transactions
       .filter(t => (t.type || '').toUpperCase().includes('S.O'))
       .map(t => ({ date: parseDMY(t.tglPO), tglPO: t.tglPO, noTx: t.noTx }))
       .filter(e => e.date)
       .sort((a, b) => a.date - b.date)
 
+    // Kelompokkan Beli nkl per bulan
+    const byMonth = {}
     for (const t of item.transactions) {
       if (!t.isBeliNkl) continue
-      const beliDate = parseDMY(t.tglPO)
+      const p = t.tglPO.split('/')
+      if (p.length < 3) continue
+      const mk = `${p[2]}-${p[1]}`
+      if (!byMonth[mk]) byMonth[mk] = []
+      byMonth[mk].push(t)
+    }
 
-      // Penilaian per BULAN: SO di bulan yang sama = terhitung ada SO,
-      // walaupun SO terjadi sebelum barang masuk.
+    for (const [mk, belis] of Object.entries(byMonth)) {
+      const sorted = belis.slice().sort((a, b) =>
+        a.tglPO.split('/').reverse().join('').localeCompare(b.tglPO.split('/').reverse().join('')))
+      const firstDate = parseDMY(sorted[0].tglPO)
+      const [yy, mm] = mk.split('-').map(Number)
+
+      // SO di bulan yang sama: prioritas SO >= tanggal beli pertama
+      const soSameMonth = soEvents.filter(so =>
+        so.date.getMonth() === mm - 1 && so.date.getFullYear() === yy)
+
       let soDate = null, soNoTx = null, soGapDays = null, soPosisi = null
-      if (beliDate) {
-        const beliMonth = beliDate.getMonth(), beliYear = beliDate.getFullYear()
-        const soSameMonth = soEvents.filter(so =>
-          so.date.getMonth() === beliMonth && so.date.getFullYear() === beliYear)
-
-        if (soSameMonth.length > 0) {
-          // Prioritas: SO setelah/sama dengan tanggal beli. Kalau tidak ada, ambil SO terakhir sebelum beli.
-          const after = soSameMonth.find(so => so.date >= beliDate)
-          const chosen = after || soSameMonth[soSameMonth.length - 1]
-          soDate = chosen.tglPO
-          soNoTx = chosen.noTx
-          soGapDays = Math.round((chosen.date - beliDate) / 86400000)
+      if (soSameMonth.length > 0) {
+        const after = firstDate ? soSameMonth.find(so => so.date >= firstDate) : null
+        const chosen = after || soSameMonth[soSameMonth.length - 1]
+        soDate = chosen.tglPO
+        soNoTx = chosen.noTx
+        if (firstDate) {
+          soGapDays = Math.round((chosen.date - firstDate) / 86400000)
           soPosisi = soGapDays >= 0 ? 'SETELAH' : 'SEBELUM'
         }
       }
 
       rows.push({
         kodeBarang: item.kodeBarang, deskripsi: item.deskripsi, unit: item.unit,
-        tglPO: t.tglPO, waktu: t.waktu, noTx: t.noTx,
-        kodeCust: t.kodeCust, noReff: t.noReff, type: t.type,
-        qtyIn: t.in, saldo: t.saldo,
-        admUser: t.admUser, admTanggal: t.admTanggal,
+        monthKey: mk,
+        beliCount: sorted.length,
+        totalQtyIn: sorted.reduce((s, t) => s + (t.in || 0), 0),
+        beliDates: sorted.map(t => t.tglPO),
+        suppliers: [...new Set(sorted.map(t => t.kodeCust).filter(Boolean))],
         soDate, soNoTx, soGapDays, soPosisi,
         totalSOItem: soEvents.length,
       })
     }
   }
+  // Sort by bulan, lalu kode barang
   return rows.sort((a, b) =>
-    a.tglPO.split('/').reverse().join('').localeCompare(b.tglPO.split('/').reverse().join('')))
+    a.monthKey.localeCompare(b.monthKey) || a.kodeBarang.localeCompare(b.kodeBarang))
 }
 
 // ── Kepatuhan SO — JUKLAK 031024 ────────────────────────────────────────────

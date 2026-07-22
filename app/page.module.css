@@ -337,3 +337,6 @@
 
 /* SO warning banner */
 .soWarnBanner { padding: 10px 24px; background: rgba(255,171,64,0.08); border-bottom: 1px solid rgba(255,171,64,0.3); color: var(--warn); font-size: 12px; font-family: var(--font-mono); line-height: 1.5; }
+
+.btnExportAlt { background: transparent; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 6px 14px; cursor: pointer; transition: all 0.15s; }
+.btnExportAlt:hover { background: var(--accent-dim); transform: translateY(-1px); }

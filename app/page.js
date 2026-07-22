@@ -504,7 +504,7 @@ function ComplianceDashboard({ compliance, onClose }) {
   )
 }
 
-// ── Beli NKL vs S.O Rutin Dashboard ──────────────────────────────────────────
+// ── Beli NKL vs S.O Rutin Dashboard (per kode barang per bulan) ──────────────
 function BeliNklDashboard({ rows, onClose }) {
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose() }
@@ -517,14 +517,13 @@ function BeliNklDashboard({ rows, onClose }) {
 
   // ── Month range slider ──
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
-  const monthKey = (tgl) => { const p = tgl.split('/'); return `${p[2]}-${p[1]}` } // YYYY-MM (sortable)
   const fmtMonth = (k) => { const [y, m] = k.split('-'); return `${MONTH_NAMES[parseInt(m)-1]} ${y}` }
-  const months = [...new Set(rows.map(r => monthKey(r.tglPO)))].sort()
+  const months = [...new Set(rows.map(r => r.monthKey))].sort()
   const [rStart, setRStart] = useState(0)
   const [rEnd, setREnd] = useState(months.length - 1)
 
   const inRange = (r) => {
-    const mi = months.indexOf(monthKey(r.tglPO))
+    const mi = months.indexOf(r.monthKey)
     return mi >= rStart && mi <= rEnd
   }
   const rangeRows = rows.filter(inRange)
@@ -538,31 +537,31 @@ function BeliNklDashboard({ rows, onClose }) {
     if (filter !== 'ALL' && catOf(r) !== filter) return false
     if (search && !r.kodeBarang.toLowerCase().includes(search.toLowerCase()) &&
         !r.deskripsi.toLowerCase().includes(search.toLowerCase()) &&
-        !(r.kodeCust||'').toLowerCase().includes(search.toLowerCase())) return false
+        !r.suppliers.join(' ').toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
 
   const soBadge = (r) => {
     if (r.soDate === null) return <span className={styles.badgeDanger}>Tanpa SO bulan itu</span>
-    if (r.soPosisi === 'SETELAH') {
-      if (r.soGapDays === 0) return <span className={styles.badgeOk}>SO H+0</span>
-      return <span className={styles.badgeOk}>SO H+{r.soGapDays}</span>
-    }
+    if (r.soPosisi === 'SETELAH') return <span className={styles.badgeOk}>SO ✓ (H+{r.soGapDays})</span>
     return <span className={styles.badgeWarn}>SO sebelum masuk (H{r.soGapDays})</span>
   }
 
   const exportBeli = async () => {
     const XLSX = await import('xlsx')
     const ws = XLSX.utils.json_to_sheet(filtered.map(r => ({
+      'Bulan': fmtMonth(r.monthKey),
       'Kode Barang': r.kodeBarang, 'Deskripsi': r.deskripsi, 'Unit': r.unit,
-      'Tgl Beli': r.tglPO, 'No Transaksi': r.noTx, 'Supplier': r.kodeCust,
-      'No Reff': r.noReff, 'QTY IN': r.qtyIn, 'Saldo': r.saldo,
-      'User ADM': r.admUser, 'Tgl Input': r.admTanggal,
-      'SO Bulan Itu': r.soDate || 'TIDAK ADA', 'No SO': r.soNoTx || '—',
+      'Jumlah Beli': r.beliCount,
+      'Tanggal Beli': r.beliDates.join(', '),
+      'Supplier': r.suppliers.join(', '),
+      'Total QTY IN': r.totalQtyIn,
+      'SO Bulan Itu': r.soDate || 'TIDAK ADA',
+      'No SO': r.soNoTx || '—',
       'Posisi SO': r.soDate === null ? 'Tanpa SO bulan itu' : r.soPosisi === 'SETELAH' ? `Setelah masuk (H+${r.soGapDays})` : `Sebelum masuk (H${r.soGapDays})`,
       'Total SO Item Ini': r.totalSOItem,
     })))
-    ws['!cols'] = [{wch:14},{wch:36},{wch:6},{wch:12},{wch:22},{wch:10},{wch:22},{wch:8},{wch:8},{wch:10},{wch:12},{wch:12},{wch:22},{wch:14},{wch:14}]
+    ws['!cols'] = [{wch:10},{wch:14},{wch:36},{wch:6},{wch:10},{wch:30},{wch:16},{wch:12},{wch:12},{wch:22},{wch:22},{wch:14}]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Beli NKL vs SO')
     XLSX.writeFile(wb, `beli_nkl_vs_so_${Date.now()}.xlsx`)
@@ -574,7 +573,7 @@ function BeliNklDashboard({ rows, onClose }) {
         <div className={styles.modalHeader}>
           <div>
             <div className={styles.modalKode} style={{color:'var(--accent)'}}>🛒 Beli NKL vs S.O Rutin</div>
-            <div className={styles.modalDesc}>Penilaian per bulan: apakah item di-SO di bulan yang sama dengan barang masuk? {rows.length} transaksi Beli nkl</div>
+            <div className={styles.modalDesc}>Per kode barang per bulan: apakah item yang kedatangan barang sudah di-SO di bulan yang sama? {rows.length} item-bulan</div>
           </div>
           <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
             <input className={styles.modalSearch} placeholder="Cari kode / supplier..." value={search} onChange={e=>setSearch(e.target.value)} />
@@ -587,7 +586,7 @@ function BeliNklDashboard({ rows, onClose }) {
           <div className={styles.rangeSection}>
             <div className={styles.rangeLabel}>
               📅 Periode: <span className={styles.rangeLabelVal}>{fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}</span>
-              <span className={styles.rangeCount}>({rangeRows.length} transaksi)</span>
+              <span className={styles.rangeCount}>({rangeRows.length} item-bulan)</span>
             </div>
             <div className={styles.rangeSliders}>
               <div className={styles.rangeTrack}>
@@ -607,8 +606,7 @@ function BeliNklDashboard({ rows, onClose }) {
               {months.map((m,i)=>(
                 <span key={m}
                   className={`${styles.rangeTick} ${i>=rStart&&i<=rEnd?styles.rangeTickActive:''}`}
-                  onClick={()=>{ 
-                    // Klik bulan: kalau di luar range, extend; kalau klik ujung, bisa mengecilkan
+                  onClick={()=>{
                     if (i < rStart) setRStart(i)
                     else if (i > rEnd) setREnd(i)
                     else { setRStart(i); setREnd(i) }
@@ -634,10 +632,10 @@ function BeliNklDashboard({ rows, onClose }) {
           <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('NOSO')}>
             <span className={styles.modalStatLabel}>⚠ Tanpa SO Bulan Itu</span>
             <span className={`${styles.modalStatVal} ${styles.colDanger}`}>{noSO.length}</span>
-            <span className={styles.modalStatSub}>Tidak ada SO di bulan tersebut</span>
+            <span className={styles.modalStatSub}>Item tidak di-SO di bulan tersebut</span>
           </div>
           <div className={`${styles.modalStat} ${styles.statClickable}`} onClick={()=>setFilter('ALL')}>
-            <span className={styles.modalStatLabel}>Total Beli NKL</span>
+            <span className={styles.modalStatLabel}>Total Item-Bulan</span>
             <span className={styles.modalStatVal}>{rangeRows.length}</span>
             <span className={styles.modalStatSub}>Dalam periode terpilih</span>
           </div>
@@ -648,27 +646,31 @@ function BeliNklDashboard({ rows, onClose }) {
             <table className={styles.modalTable}>
               <thead><tr>
                 <th className={styles.mth}>#</th>
-                <th className={styles.mth}>Tgl Beli</th>
+                <th className={styles.mth}>Bulan</th>
                 <th className={styles.mth}>Kode Barang</th>
                 <th className={styles.mth}>Deskripsi</th>
+                <th className={`${styles.mth} ${styles.alignRight}`}>Jml Beli</th>
+                <th className={styles.mth}>Tgl Beli</th>
                 <th className={styles.mth}>Supplier</th>
-                <th className={styles.mth}>No Transaksi</th>
-                <th className={`${styles.mth} ${styles.alignRight}`}>QTY IN</th>
-                <th className={styles.mth}>User ADM</th>
+                <th className={`${styles.mth} ${styles.alignRight}`}>Total QTY IN</th>
                 <th className={styles.mth}>SO Bulan Itu</th>
-                <th className={styles.mth}>Status SO</th>
+                <th className={styles.mth}>Status</th>
               </tr></thead>
               <tbody>
                 {filtered.map((r, i) => (
                   <tr key={i} className={`${styles.mtr} ${r.soDate===null?styles.mtrLambat:r.soPosisi==='SETELAH'?styles.mtrAdj:''}`}>
                     <td className={`${styles.mtd} ${styles.tdNum}`}>{i+1}</td>
-                    <td className={`${styles.mtd} ${styles.tdDate}`}>{r.tglPO}</td>
+                    <td className={`${styles.mtd} ${styles.tdDate}`}>{fmtMonth(r.monthKey)}</td>
                     <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.kodeBarang}</td>
                     <td className={`${styles.mtd} ${styles.tdDescTx}`}>{r.deskripsi}</td>
-                    <td className={`${styles.mtd} ${styles.tdCust}`}>{r.kodeCust||'—'}</td>
-                    <td className={`${styles.mtd} ${styles.tdNoTx}`}>{r.noTx}</td>
-                    <td className={`${styles.mtd} ${styles.alignRight} ${styles.colIn}`}>{r.qtyIn>0?fmt(r.qtyIn):'—'}</td>
-                    <td className={`${styles.mtd} ${styles.tdAdmUser}`}>{r.admUser||'—'}</td>
+                    <td className={`${styles.mtd} ${styles.alignRight}`}>{r.beliCount}x</td>
+                    <td className={`${styles.mtd} ${styles.tdTime}`} title={r.beliDates.join(', ')}>
+                      {r.beliCount === 1 ? r.beliDates[0] : `${r.beliDates[0].slice(0,5)} … ${r.beliDates[r.beliDates.length-1].slice(0,5)}`}
+                    </td>
+                    <td className={`${styles.mtd} ${styles.tdCust}`} title={r.suppliers.join(', ')}>
+                      {r.suppliers.slice(0,2).join(', ')}{r.suppliers.length>2&&` +${r.suppliers.length-2}`}
+                    </td>
+                    <td className={`${styles.mtd} ${styles.alignRight} ${styles.colIn}`}>{fmt(r.totalQtyIn)}</td>
                     <td className={`${styles.mtd} ${styles.tdDate}`}>{r.soDate||'—'}</td>
                     <td className={styles.mtd}>{soBadge(r)}</td>
                   </tr>

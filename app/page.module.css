@@ -334,3 +334,6 @@
 .compStickyCol { position: sticky; left: 0; background: var(--surface); z-index: 5; }
 .compLegend { display: flex; gap: 16px; align-items: center; padding: 10px 20px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text2); font-family: var(--font-mono); flex-wrap: wrap; }
 .compLegend > span { display: flex; align-items: center; gap: 6px; }
+
+/* SO warning banner */
+.soWarnBanner { padding: 10px 24px; background: rgba(255,171,64,0.08); border-bottom: 1px solid rgba(255,171,64,0.3); color: var(--warn); font-size: 12px; font-family: var(--font-mono); line-height: 1.5; }

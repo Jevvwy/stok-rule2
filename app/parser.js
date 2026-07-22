@@ -343,3 +343,54 @@ export function getBpbRj(items) {
   }
   return rows
 }
+
+// ── Beli NKL vs S.O Rutin compliance ────────────────────────────────────────
+// Untuk setiap Beli nkl (barang masuk), cari S.O Rutin terdekat pada item yang sama
+// di tanggal >= tanggal beli. Menilai apakah BU menjalankan SO saat ada barang masuk.
+function parseDMY(d) {
+  if (!d) return null
+  const p = d.split('/')
+  if (p.length < 3) return null
+  return new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]))
+}
+
+export function getBeliNklWithSO(items) {
+  const rows = []
+  for (const item of items) {
+    // Kumpulkan tanggal S.O Rutin untuk item ini
+    const soEvents = item.transactions
+      .filter(t => (t.type || '').toUpperCase().includes('S.O'))
+      .map(t => ({ date: parseDMY(t.tglPO), tglPO: t.tglPO, noTx: t.noTx }))
+      .filter(e => e.date)
+      .sort((a, b) => a.date - b.date)
+
+    for (const t of item.transactions) {
+      if (!t.isBeliNkl) continue
+      const beliDate = parseDMY(t.tglPO)
+      let nearestSO = null, soGapDays = null
+      if (beliDate) {
+        for (const so of soEvents) {
+          if (so.date >= beliDate) {
+            nearestSO = so
+            soGapDays = Math.round((so.date - beliDate) / 86400000)
+            break
+          }
+        }
+      }
+      rows.push({
+        kodeBarang: item.kodeBarang, deskripsi: item.deskripsi, unit: item.unit,
+        tglPO: t.tglPO, waktu: t.waktu, noTx: t.noTx,
+        kodeCust: t.kodeCust, noReff: t.noReff, type: t.type,
+        qtyIn: t.in, saldo: t.saldo,
+        admUser: t.admUser, admTanggal: t.admTanggal,
+        soDate: nearestSO ? nearestSO.tglPO : null,
+        soNoTx: nearestSO ? nearestSO.noTx : null,
+        soGapDays,
+        totalSOItem: soEvents.length,
+      })
+    }
+  }
+  // Sort by tanggal beli
+  return rows.sort((a, b) =>
+    a.tglPO.split('/').reverse().join('').localeCompare(b.tglPO.split('/').reverse().join('')))
+}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, getBeliNklWithSO, getSOCompliance, parseSOCsv, groupSOByKode } from './parser'
+import { processTextToDf, getBeliNklLambat, getBpbRj, getAdjAnalysis, getBeliNklWithSO, getSOCompliance, parseSOCsv, groupSOByKode, buildSaldoTimeline, qtyAsOf } from './parser'
 import styles from './page.module.css'
 
 const PASSWORD = 'gasemuatau'
@@ -990,8 +990,19 @@ export default function Home() {
   const [showCompliance,setShowCompliance]=useState(false)
   const [soData,setSoData]=useState(null)
   const [soFileName,setSoFileName]=useState(null)
+  const [data2,setData2]=useState(null)
+  const [fileName2,setFileName2]=useState(null)
   const fileRef=useRef()
   const soFileRef=useRef()
+  const file2Ref=useRef()
+
+  const processFile2=useCallback((file)=>{
+    if(!file||!file.name.endsWith('.txt')){alert('Harap upload file .txt kartu stok gudang 2');return}
+    setFileName2(file.name)
+    const reader=new FileReader()
+    reader.onload=(e)=>{try{setData2(processTextToDf(e.target.result,cleanKode))}catch(err){alert('Error gudang 2: '+err.message)}}
+    reader.readAsText(file,'utf-8')
+  },[cleanKode])
 
   const processSOFile=useCallback((file)=>{
     if(!file||!file.name.toLowerCase().endsWith('.csv')){alert('Harap upload file .csv export SO Harian');return}
@@ -1013,39 +1024,62 @@ export default function Home() {
   const handleSort=(key)=>{if(sortKey===key)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc')}}
   const exportExcel=async()=>{if(!data)return;const XLSX=await import('xlsx');const ws=XLSX.utils.json_to_sheet(data.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Saldo Awal':r.saldoAwal,'Total IN':r.totalIn,'Total OUT':r.totalOut,'Saldo Akhir':r.saldoAkhir,'Has Transactions':r.hasTx?'Ya':'Tidak'})));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Kartu Stok');XLSX.writeFile(wb,`kartu_stok_rule2_${Date.now()}.xlsx`)}
 
-  // Export flat: semua transaksi Beli NKL (format seperti kartu stok mentah)
+  // Export flat: semua transaksi Beli NKL.
+  // Jika kartu stok gudang 2 diupload: tambah Qty Sebelum, Qty Gudang Lain, TOTAL,
+  // dan flag Wajib SO (aturan a: stok gabungan SEBELUM masuk < 500).
   const exportBeliNklFlat=async()=>{
     if(!data)return
     const XLSX=await import('xlsx')
+    const sources=[{items:data,label:fileName||'Gudang 1'}]
+    if(data2)sources.push({items:data2,label:fileName2||'Gudang 2'})
+    const tlMaps=data2?[buildSaldoTimeline(data),buildSaldoTimeline(data2)]:null
+
     const flat=[]
-    let no=0
-    for(const item of data){
-      for(const t of item.transactions){
-        if(!t.isBeliNkl)continue
-        no++
-        const admRaw=t.admUser&&t.admTanggal?`${t.admUser}-${t.admTanggal.replace('/','')}`:t.admUser||''
-        flat.push({
-          'No':no,
-          'Item':`${item.kodeBarang} ${item.deskripsi}  Unit: ${item.unit}`,
-          'Kode Barang':item.kodeBarang,
-          'Tgl':t.tglPO,
-          'Waktu':t.waktu||'',
-          'No Transaksi':t.noTx,
-          'TRS':t.jenisTrs,
-          'Cust/Supp':t.kodeCust||'',
-          'No Reff':t.noReff||'',
-          'Type':t.type||'',
-          'IN':t.in||0,
-          'OUT':t.out||0,
-          'Saldo':t.saldo!=null?t.saldo:'',
-          'ADM':admRaw,
-          'User ADM':t.admUser||'',
-          'Tgl Input':t.admTanggal||'',
-        })
+    sources.forEach((src,si)=>{
+      for(const item of src.items){
+        for(const t of item.transactions){
+          if(!t.isBeliNkl)continue
+          const admRaw=t.admUser&&t.admTanggal?`${t.admUser}-${t.admTanggal.replace('/','')}`:t.admUser||''
+          const sebelum=(t.saldo!=null)?t.saldo-(t.in||0):null
+          const row={
+            'No':0,
+            'Item':`${item.kodeBarang} ${item.deskripsi}  Unit: ${item.unit}`,
+            'Kode Barang':item.kodeBarang,
+            'Tgl':t.tglPO,
+            'Waktu':t.waktu||'',
+            'No Transaksi':t.noTx,
+            'TRS':t.jenisTrs,
+            'Cust/Supp':t.kodeCust||'',
+            'No Reff':t.noReff||'',
+            'Type':t.type||'',
+            'IN':t.in||0,
+            'OUT':t.out||0,
+            'Saldo':t.saldo!=null?t.saldo:'',
+            'ADM':admRaw,
+            'User ADM':t.admUser||'',
+            'Tgl Input':t.admTanggal||'',
+            'Qty Sebelum':sebelum!=null?sebelum:'',
+          }
+          if(data2){
+            const other=qtyAsOf(tlMaps[1-si],item.kodeBarang,t.tglPO)
+            const total=(sebelum!=null?sebelum:0)+(other!=null?other:0)
+            row['Gudang']=src.label
+            row['Qty Gudang Lain']=other!=null?other:0
+            row['TOTAL']=total
+            row['Wajib SO (<500)']=total<500?'YA':'Tidak'
+            row.__total=total
+          }
+          flat.push(row)
+        }
       }
-    }
+    })
+
+    // Sort: jika 2 gudang, urutkan TOTAL menurun (seperti format olahan); jika 1 file, urutan asli
+    if(data2)flat.sort((a,b)=>b.__total-a.__total)
+    flat.forEach((r,i)=>{r['No']=i+1;delete r.__total})
+
     const ws=XLSX.utils.json_to_sheet(flat)
-    ws['!cols']=[{wch:5},{wch:46},{wch:15},{wch:11},{wch:9},{wch:20},{wch:9},{wch:10},{wch:20},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:9},{wch:9}]
+    ws['!cols']=[{wch:5},{wch:46},{wch:15},{wch:11},{wch:9},{wch:20},{wch:9},{wch:10},{wch:20},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:9},{wch:9},{wch:11},{wch:20},{wch:14},{wch:8},{wch:14}]
     const wb=XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb,ws,'Beli NKL')
     XLSX.writeFile(wb,`beli_nkl_${Date.now()}.xlsx`)
@@ -1108,6 +1142,10 @@ export default function Home() {
           {!soData
             ? <button className={styles.btnSO} onClick={()=>soFileRef.current.click()} title="Kartu stok tidak mencatat SO hasil PAS — upload export SO untuk analisis akurat">+ Upload SO Harian (CSV)</button>
             : <div className={styles.fileTag} style={{borderColor:'rgba(64,196,255,0.4)'}}><span style={{color:'var(--info)'}}>📋</span>{soFileName} · {soData.length} SO<button className={styles.soRemove} onClick={()=>{setSoData(null);setSoFileName(null)}}>✕</button></div>}
+          <input ref={file2Ref} type="file" accept=".txt" style={{display:'none'}} onChange={e=>processFile2(e.target.files[0])} />
+          {!data2
+            ? <button className={styles.btnFile2} onClick={()=>file2Ref.current.click()} title="Untuk BU dengan 2 gudang: aturan <500 dinilai dari stok gabungan sebelum barang masuk">+ Kartu Stok Gudang 2 (TXT)</button>
+            : <div className={styles.fileTag} style={{borderColor:'rgba(255,171,64,0.4)'}}><span style={{color:'var(--warn)'}}>🏭</span>{fileName2} · {data2.length} item<button className={styles.soRemove} onClick={()=>{setData2(null);setFileName2(null)}}>✕</button></div>}
           <div className={styles.clickHint}>💡 Klik baris untuk lihat detail transaksi</div>
         </div>)}
         {stats&&(<div className={styles.stats}>

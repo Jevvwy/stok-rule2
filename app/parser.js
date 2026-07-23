@@ -574,3 +574,36 @@ export function groupSOByKode(soRows) {
   }
   return map
 }
+
+// ── Saldo timeline untuk lookup lintas gudang ────────────────────────────────
+// Digunakan saat 2 file kartu stok (2 gudang) diupload: mencari saldo gudang lain
+// pada tanggal tertentu (as-of, akhir hari tanggal tsb).
+export function buildSaldoTimeline(items) {
+  const map = {}
+  for (const item of items) {
+    const tl = []
+    for (const t of item.transactions) {
+      const d = parseDMY(t.tglPO)
+      if (d && typeof t.saldo === 'number') tl.push({ date: d, saldo: t.saldo })
+    }
+    map[item.kodeBarang] = {
+      saldoAwal: typeof item.saldoAwal === 'number' ? item.saldoAwal : 0,
+      timeline: tl,
+    }
+  }
+  return map
+}
+
+// Saldo item di gudang lain per tanggal (dd/mm/yyyy). null = item tidak ada di gudang itu.
+export function qtyAsOf(map, kode, tglStr) {
+  const e = map[kode]
+  if (!e) return null
+  const date = parseDMY(tglStr)
+  if (!date) return e.saldoAwal
+  let val = e.saldoAwal
+  for (const p of e.timeline) {
+    if (p.date <= date) val = p.saldo
+    else break
+  }
+  return val
+}

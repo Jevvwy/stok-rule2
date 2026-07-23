@@ -973,6 +973,81 @@ function LambatModal({ rows, onClose }) {
   )
 }
 
+// ── Export Beli NKL: pilih periode dulu ──────────────────────────────────────
+function ExportBeliModal({ months, onExport, onClose }) {
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
+  const fmtMonth = (k) => { const [y, m] = k.split('-'); return `${MONTH_NAMES[parseInt(m)-1]} ${y}` }
+  const [rStart, setRStart] = useState(0)
+  const [rEnd, setREnd] = useState(months.length - 1)
+
+  return (
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} style={{maxWidth:'560px'}} onClick={e => e.stopPropagation()}>
+        <div className={styles.modalHeader}>
+          <div>
+            <div className={styles.modalKode} style={{color:'var(--accent)'}}>↓ Export Beli NKL</div>
+            <div className={styles.modalDesc}>Pilih periode yang akan di-export</div>
+          </div>
+          <button className={styles.modalClose} onClick={onClose}>✕</button>
+        </div>
+
+        <div className={styles.rangeSection} style={{borderBottom:'none'}}>
+          <div className={styles.rangeLabel}>
+            📅 Periode: <span className={styles.rangeLabelVal}>{fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}</span>
+          </div>
+          {months.length > 1 && (
+            <>
+              <div className={styles.rangeSliders}>
+                <div className={styles.rangeTrack}>
+                  <div className={styles.rangeTrackFill} style={{
+                    left: `${(rStart/(months.length-1))*100}%`,
+                    width: `${((rEnd-rStart)/(months.length-1))*100}%`,
+                  }} />
+                </div>
+                <input type="range" min={0} max={months.length-1} value={rStart}
+                  onChange={e=>setRStart(Math.min(parseInt(e.target.value), rEnd))}
+                  className={styles.rangeInput} />
+                <input type="range" min={0} max={months.length-1} value={rEnd}
+                  onChange={e=>setREnd(Math.max(parseInt(e.target.value), rStart))}
+                  className={styles.rangeInput} />
+              </div>
+              <div className={styles.rangeTicks}>
+                {months.map((m,i)=>(
+                  <span key={m}
+                    className={`${styles.rangeTick} ${i>=rStart&&i<=rEnd?styles.rangeTickActive:''}`}
+                    onClick={()=>{
+                      if (i < rStart) setRStart(i)
+                      else if (i > rEnd) setREnd(i)
+                      else { setRStart(i); setREnd(i) }
+                    }}>
+                    {fmtMonth(m)}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+          <div style={{display:'flex',gap:'10px',marginTop:'18px'}}>
+            <button className={styles.btnExport} style={{flex:1}}
+              onClick={()=>{onExport(months[rStart], months[rEnd]); onClose()}}>
+              ↓ Export {fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}
+            </button>
+            <button className={styles.btnReupload}
+              onClick={()=>{onExport(null, null); onClose()}}>
+              Semua Periode
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function Home() {
   const [authed,setAuthed]=useState(()=>{if(typeof window!=='undefined')return sessionStorage.getItem('stok_auth')==='1';return false})
@@ -987,6 +1062,7 @@ export default function Home() {
   const [showBpbRj,setShowBpbRj]=useState(false)
   const [showAdj,setShowAdj]=useState(false)
   const [showBeliNkl,setShowBeliNkl]=useState(false)
+  const [showBeliExport,setShowBeliExport]=useState(false)
   const [showCompliance,setShowCompliance]=useState(false)
   const [soData,setSoData]=useState(null)
   const [soFileName,setSoFileName]=useState(null)
@@ -1027,18 +1103,20 @@ export default function Home() {
   // Export flat: semua transaksi Beli NKL.
   // Jika kartu stok gudang 2 diupload: tambah Qty Sebelum, Qty Gudang Lain, TOTAL,
   // dan flag Wajib SO (aturan a: stok gabungan SEBELUM masuk < 500).
-  const exportBeliNklFlat=async()=>{
+  const exportBeliNklFlat=async(mFrom=null,mTo=null)=>{
     if(!data)return
     const XLSX=await import('xlsx')
     const sources=[{items:data,label:fileName||'Gudang 1'}]
     if(data2)sources.push({items:data2,label:fileName2||'Gudang 2'})
     const tlMaps=data2?[buildSaldoTimeline(data),buildSaldoTimeline(data2)]:null
+    const monthKeyOf=(tgl)=>{const p=tgl.split('/');return p.length>=3?`${p[2]}-${p[1]}`:''}
 
     const flat=[]
     sources.forEach((src,si)=>{
       for(const item of src.items){
         for(const t of item.transactions){
           if(!t.isBeliNkl)continue
+          if(mFrom&&mTo){const mk=monthKeyOf(t.tglPO);if(mk<mFrom||mk>mTo)continue}
           const admRaw=t.admUser&&t.admTanggal?`${t.admUser}-${t.admTanggal.replace('/','')}`:t.admUser||''
           const sebelum=(t.saldo!=null)?t.saldo-(t.in||0):null
           const row={
@@ -1088,6 +1166,13 @@ export default function Home() {
   const lambatRows=data?getBeliNklLambat(data):[]
   const bpbRjRows=data?getBpbRj(data):[]
   const adjAnalysis=data?getAdjAnalysis(data):[]
+  const beliMonths=(()=>{
+    if(!data)return[]
+    const s=new Set()
+    const collect=(items)=>{for(const it of items)for(const t of it.transactions){if(t.isBeliNkl){const p=t.tglPO.split('/');if(p.length>=3)s.add(`${p[2]}-${p[1]}`)}}}
+    collect(data);if(data2)collect(data2)
+    return[...s].sort()
+  })()
   const soMap=soData?groupSOByKode(soData):null
   const beliNklRows=data?getBeliNklWithSO(data,soMap):[]
   const compliance=data?getSOCompliance(data,soMap):{months:[],rows:[]}
@@ -1122,7 +1207,7 @@ export default function Home() {
               {adjAnalysis.length>0&&<button className={styles.btnAdj} onClick={()=>setShowAdj(true)}>🔍 ADJ vs BPB/R.j {adjNoMatch.length>0&&`(${adjNoMatch.length} ⚠)`}</button>}
               {bpbRjRows.length>0&&<button className={styles.btnBpbRj} onClick={()=>setShowBpbRj(true)}>📦 BPB/R.j ({bpbRjRows.length})</button>}
               {lambatRows.length>0&&<button className={styles.btnLambat} onClick={()=>setShowLambat(true)}>⚠ Input Lambat ({lambatRows.length})</button>}
-              <button className={styles.btnExportAlt} onClick={exportBeliNklFlat}>↓ Beli NKL</button>
+              <button className={styles.btnExportAlt} onClick={()=>setShowBeliExport(true)}>↓ Beli NKL</button>
               <button className={styles.btnExport} onClick={exportExcel}>↓ Export Excel</button>
             </>}
           </div>
@@ -1182,6 +1267,7 @@ export default function Home() {
       {showAdj&&<AdjDashboard analysis={adjAnalysis} onClose={()=>setShowAdj(false)} />}
       {showBeliNkl&&<BeliNklDashboard rows={beliNklRows} hasSOFile={!!soData} onClose={()=>setShowBeliNkl(false)} />}
       {showCompliance&&<ComplianceDashboard compliance={compliance} hasSOFile={!!soData} onClose={()=>setShowCompliance(false)} />}
+      {showBeliExport&&beliMonths.length>0&&<ExportBeliModal months={beliMonths} onExport={exportBeliNklFlat} onClose={()=>setShowBeliExport(false)} />}
     </div>
   )
 }

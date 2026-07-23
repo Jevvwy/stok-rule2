@@ -1008,6 +1008,10 @@ function ExportBeliModal({ months, onExport, onClose }) {
               📤 Barang Keluar (Jual NKL)
               <span className={styles.modeBtnSub}>Wajib SO jika stok SETELAH keluar &lt; 500 — aturan b</span>
             </button>
+            <button className={`${styles.modeBtn} ${mode==='GABUNGAN'?styles.modeBtnActive:''}`} onClick={()=>setMode('GABUNGAN')}>
+              📥📤 Gabungan (4 Sheet)
+              <span className={styles.modeBtnSub}>Hanya yang WAJIB SO — dipisah: Keduanya / Beli saja / Jual saja + Summary</span>
+            </button>
           </div>
           <div className={styles.rangeLabel}>
             📅 Periode: <span className={styles.rangeLabelVal}>{fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}</span>
@@ -1046,7 +1050,7 @@ function ExportBeliModal({ months, onExport, onClose }) {
           <div style={{display:'flex',gap:'10px',marginTop:'18px'}}>
             <button className={styles.btnExport} style={{flex:1}}
               onClick={()=>{onExport(months[rStart], months[rEnd], mode); onClose()}}>
-              ↓ Export {mode==='BELI'?'Beli':'Jual'} NKL {fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}
+              ↓ Export {mode==='BELI'?'Beli NKL':mode==='JUAL'?'Jual NKL':'Gabungan'} {fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}
             </button>
             <button className={styles.btnReupload}
               onClick={()=>{onExport(null, null, mode); onClose()}}>
@@ -1111,9 +1115,7 @@ export default function Home() {
   const handleSort=(key)=>{if(sortKey===key)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortKey(key);setSortDir('asc')}}
   const exportExcel=async()=>{if(!data)return;const XLSX=await import('xlsx');const ws=XLSX.utils.json_to_sheet(data.map(r=>({'Kode Barang':r.kodeBarang,'Deskripsi':r.deskripsi,'Unit':r.unit,'Saldo Awal':r.saldoAwal,'Total IN':r.totalIn,'Total OUT':r.totalOut,'Saldo Akhir':r.saldoAkhir,'Has Transactions':r.hasTx?'Ya':'Tidak'})));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Kartu Stok');XLSX.writeFile(wb,`kartu_stok_rule2_${Date.now()}.xlsx`)}
 
-  // Export flat: semua transaksi Beli NKL.
-  // Jika kartu stok gudang 2 diupload: tambah Qty Sebelum, Qty Gudang Lain, TOTAL,
-  // dan flag Wajib SO (aturan a: stok gabungan SEBELUM masuk < 500).
+  // Export transaksi NKL: Beli / Jual / Gabungan (3 sheet kategorisasi per kode barang)
   const exportBeliNklFlat=async(mFrom=null,mTo=null,mode='BELI')=>{
     if(!data)return
     const XLSX=await import('xlsx')
@@ -1123,65 +1125,99 @@ export default function Home() {
     const monthKeyOf=(tgl)=>{const p=tgl.split('/');return p.length>=3?`${p[2]}-${p[1]}`:''}
     const isJualKeluar=(t)=>t.out>0&&(t.jenisTrs||'').toLowerCase().includes('jual')
 
-    const flat=[]
-    sources.forEach((src,si)=>{
-      for(const item of src.items){
-        for(const t of item.transactions){
-          if(mode==='BELI'){if(!t.isBeliNkl)continue}
-          else{if(!isJualKeluar(t))continue}
-          if(mFrom&&mTo){const mk=monthKeyOf(t.tglPO);if(mk<mFrom||mk>mTo)continue}
-          const admRaw=t.admUser&&t.admTanggal?`${t.admUser}-${t.admTanggal.replace('/','')}`:t.admUser||''
-          // BELI: qty relevan = stok SEBELUM masuk (saldo - IN)
-          // JUAL: qty relevan = stok SETELAH keluar (saldo)
-          const sebelum=(t.saldo!=null)?(mode==='BELI'?t.saldo-(t.in||0):t.saldo+(t.out||0)):null
-          const sesudah=t.saldo!=null?t.saldo:null
-          const basis=mode==='BELI'?sebelum:sesudah
-          const row={
-            'No':0,
-            'Item':`${item.kodeBarang} ${item.deskripsi}  Unit: ${item.unit}`,
-            'Kode Barang':item.kodeBarang,
-            'Tgl':t.tglPO,
-            'Waktu':t.waktu||'',
-            'No Transaksi':t.noTx,
-            'TRS':t.jenisTrs,
-            'Cust/Supp':t.kodeCust||'',
-            'No Reff':t.noReff||'',
-            'Type':t.type||'',
-            'IN':t.in||0,
-            'OUT':t.out||0,
-            'Saldo':t.saldo!=null?t.saldo:'',
-            'ADM':admRaw,
-            'User ADM':t.admUser||'',
-            'Tgl Input':t.admTanggal||'',
-            'Qty Sebelum':sebelum!=null?sebelum:'',
-            'Qty Sesudah':sesudah!=null?sesudah:'',
+    const buildRows=(m)=>{
+      const flat=[]
+      sources.forEach((src,si)=>{
+        for(const item of src.items){
+          for(const t of item.transactions){
+            if(m==='BELI'){if(!t.isBeliNkl)continue}
+            else{if(!isJualKeluar(t))continue}
+            if(mFrom&&mTo){const mk=monthKeyOf(t.tglPO);if(mk<mFrom||mk>mTo)continue}
+            const admRaw=t.admUser&&t.admTanggal?`${t.admUser}-${t.admTanggal.replace('/','')}`:t.admUser||''
+            const sebelum=(t.saldo!=null)?(m==='BELI'?t.saldo-(t.in||0):t.saldo+(t.out||0)):null
+            const sesudah=t.saldo!=null?t.saldo:null
+            const basis=m==='BELI'?sebelum:sesudah
+            const row={
+              'No':0,
+              'Kriteria':m==='BELI'?'Beli NKL':'Jual NKL',
+              'Item':`${item.kodeBarang} ${item.deskripsi}  Unit: ${item.unit}`,
+              'Kode Barang':item.kodeBarang,
+              'Tgl':t.tglPO,'Waktu':t.waktu||'',
+              'No Transaksi':t.noTx,'TRS':t.jenisTrs,
+              'Cust/Supp':t.kodeCust||'','No Reff':t.noReff||'','Type':t.type||'',
+              'IN':t.in||0,'OUT':t.out||0,'Saldo':t.saldo!=null?t.saldo:'',
+              'ADM':admRaw,'User ADM':t.admUser||'','Tgl Input':t.admTanggal||'',
+              'Qty Sebelum':sebelum!=null?sebelum:'',
+              'Qty Sesudah':sesudah!=null?sesudah:'',
+            }
+            if(data2){
+              const other=qtyAsOf(tlMaps[1-si],item.kodeBarang,t.tglPO)
+              const total=(basis!=null?basis:0)+(other!=null?other:0)
+              row['Gudang']=src.label
+              row['Qty Gudang Lain']=other!=null?other:0
+              row['TOTAL']=total
+              row['Wajib SO (<500)']=total<500?'YA':'Tidak'
+              row.__total=total
+            }else{
+              row['Wajib SO (<500)']=(basis!=null&&basis<500)?'YA':'Tidak'
+            }
+            flat.push(row)
           }
-          if(data2){
-            const other=qtyAsOf(tlMaps[1-si],item.kodeBarang,t.tglPO)
-            const total=(basis!=null?basis:0)+(other!=null?other:0)
-            row['Gudang']=src.label
-            row['Qty Gudang Lain']=other!=null?other:0
-            row['TOTAL']=total
-            row['Wajib SO (<500)']=total<500?'YA':'Tidak'
-            row.__total=total
-          }else{
-            row['Wajib SO (<500)']=(basis!=null&&basis<500)?'YA':'Tidak'
-          }
-          flat.push(row)
         }
-      }
-    })
+      })
+      return flat
+    }
 
-    // Sort: jika 2 gudang, urutkan TOTAL menurun (seperti format olahan); jika 1 file, urutan asli
-    if(data2)flat.sort((a,b)=>b.__total-a.__total)
-    flat.forEach((r,i)=>{r['No']=i+1;delete r.__total})
-
-    const ws=XLSX.utils.json_to_sheet(flat)
-    ws['!cols']=[{wch:5},{wch:46},{wch:15},{wch:11},{wch:9},{wch:20},{wch:9},{wch:10},{wch:20},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:9},{wch:9},{wch:11},{wch:20},{wch:14},{wch:8},{wch:14}]
+    const COLW=[{wch:5},{wch:10},{wch:46},{wch:15},{wch:11},{wch:9},{wch:20},{wch:9},{wch:10},{wch:20},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:9},{wch:9},{wch:11},{wch:11},{wch:20},{wch:14},{wch:8},{wch:14}]
     const wb=XLSX.utils.book_new()
-    const sheetName=mode==='BELI'?'Beli NKL':'Jual NKL'
-    XLSX.utils.book_append_sheet(wb,ws,sheetName)
-    XLSX.writeFile(wb,`${mode==='BELI'?'beli':'jual'}_nkl_${Date.now()}.xlsx`)
+
+    if(mode==='GABUNGAN'){
+      const wajib=r=>r['Wajib SO (<500)']==='YA'
+      const beliW=buildRows('BELI').filter(wajib)
+      const jualW=buildRows('JUAL').filter(wajib)
+      const bSet=new Set(beliW.map(r=>r['Kode Barang']))
+      const jSet=new Set(jualW.map(r=>r['Kode Barang']))
+      const bothSet=new Set([...bSet].filter(k=>jSet.has(k)))
+
+      const sortKodeTgl=(a,b)=>a['Kode Barang'].localeCompare(b['Kode Barang'])||a['Tgl'].split('/').reverse().join('').localeCompare(b['Tgl'].split('/').reverse().join(''))
+      const bothRows=[...beliW,...jualW].filter(r=>bothSet.has(r['Kode Barang'])).sort(sortKodeTgl)
+      const beliOnly=beliW.filter(r=>!bothSet.has(r['Kode Barang'])).sort(sortKodeTgl)
+      const jualOnly=jualW.filter(r=>!bothSet.has(r['Kode Barang'])).sort(sortKodeTgl)
+
+      // Sheet 1: Summary per kode barang
+      const itemMap={}
+      for(const r of [...beliW,...jualW])itemMap[r['Kode Barang']]=r['Item']
+      const katOrder={'Memenuhi KEDUANYA':0,'Beli NKL saja':1,'Jual NKL saja':2}
+      const summary=[...new Set([...bSet,...jSet])].map(k=>({
+        'Kode Barang':k,
+        'Item':itemMap[k],
+        'Kategori':bothSet.has(k)?'Memenuhi KEDUANYA':bSet.has(k)?'Beli NKL saja':'Jual NKL saja',
+        'Jml Beli Wajib SO':beliW.filter(r=>r['Kode Barang']===k).length,
+        'Jml Jual Wajib SO':jualW.filter(r=>r['Kode Barang']===k).length,
+      })).sort((a,b)=>katOrder[a['Kategori']]-katOrder[b['Kategori']]||a['Kode Barang'].localeCompare(b['Kode Barang']))
+      const wsSummary=XLSX.utils.json_to_sheet(summary.length?summary:[{'Info':'Tidak ada item wajib SO di periode ini'}])
+      wsSummary['!cols']=[{wch:15},{wch:46},{wch:20},{wch:16},{wch:16}]
+      XLSX.utils.book_append_sheet(wb,wsSummary,'Summary')
+
+      const addSheet=(rows,name)=>{
+        rows.forEach((r,i)=>{r['No']=i+1;delete r.__total})
+        const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{'Info':'Tidak ada'}])
+        ws['!cols']=COLW
+        XLSX.utils.book_append_sheet(wb,ws,name)
+      }
+      addSheet(bothRows,'Memenuhi Keduanya')
+      addSheet(beliOnly,'Beli NKL Saja')
+      addSheet(jualOnly,'Jual NKL Saja')
+      XLSX.writeFile(wb,`nkl_gabungan_wajib_so_${Date.now()}.xlsx`)
+    }else{
+      const flat=buildRows(mode)
+      if(data2)flat.sort((a,b)=>b.__total-a.__total)
+      flat.forEach((r,i)=>{r['No']=i+1;delete r.__total})
+      const ws=XLSX.utils.json_to_sheet(flat)
+      ws['!cols']=COLW
+      XLSX.utils.book_append_sheet(wb,ws,mode==='BELI'?'Beli NKL':'Jual NKL')
+      XLSX.writeFile(wb,`${mode==='BELI'?'beli':'jual'}_nkl_${Date.now()}.xlsx`)
+    }
   }
 
   const lambatRows=data?getBeliNklLambat(data):[]

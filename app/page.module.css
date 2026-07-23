@@ -340,3 +340,6 @@
 
 .btnExportAlt { background: transparent; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 6px 14px; cursor: pointer; transition: all 0.15s; }
 .btnExportAlt:hover { background: var(--accent-dim); transform: translateY(-1px); }
+
+.btnFile2 { background: transparent; border: 1px dashed var(--warn); border-radius: 4px; color: var(--warn); font-family: var(--font-mono); font-size: 12px; padding: 5px 12px; cursor: pointer; transition: all 0.15s; }
+.btnFile2:hover { background: rgba(255,171,64,0.08); }

@@ -985,19 +985,30 @@ function ExportBeliModal({ months, onExport, onClose }) {
   const fmtMonth = (k) => { const [y, m] = k.split('-'); return `${MONTH_NAMES[parseInt(m)-1]} ${y}` }
   const [rStart, setRStart] = useState(0)
   const [rEnd, setREnd] = useState(months.length - 1)
+  const [mode, setMode] = useState('BELI') // BELI | JUAL
 
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} style={{maxWidth:'560px'}} onClick={e => e.stopPropagation()}>
         <div className={styles.modalHeader}>
           <div>
-            <div className={styles.modalKode} style={{color:'var(--accent)'}}>↓ Export Beli NKL</div>
-            <div className={styles.modalDesc}>Pilih periode yang akan di-export</div>
+            <div className={styles.modalKode} style={{color:'var(--accent)'}}>↓ Export Transaksi NKL</div>
+            <div className={styles.modalDesc}>Pilih jenis transaksi dan periode</div>
           </div>
           <button className={styles.modalClose} onClick={onClose}>✕</button>
         </div>
 
         <div className={styles.rangeSection} style={{borderBottom:'none'}}>
+          <div className={styles.modeToggle}>
+            <button className={`${styles.modeBtn} ${mode==='BELI'?styles.modeBtnActive:''}`} onClick={()=>setMode('BELI')}>
+              📥 Barang Masuk (Beli NKL)
+              <span className={styles.modeBtnSub}>Wajib SO jika stok SEBELUM masuk &lt; 500 — aturan a</span>
+            </button>
+            <button className={`${styles.modeBtn} ${mode==='JUAL'?styles.modeBtnActive:''}`} onClick={()=>setMode('JUAL')}>
+              📤 Barang Keluar (Jual NKL)
+              <span className={styles.modeBtnSub}>Wajib SO jika stok SETELAH keluar &lt; 500 — aturan b</span>
+            </button>
+          </div>
           <div className={styles.rangeLabel}>
             📅 Periode: <span className={styles.rangeLabelVal}>{fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}</span>
           </div>
@@ -1034,11 +1045,11 @@ function ExportBeliModal({ months, onExport, onClose }) {
           )}
           <div style={{display:'flex',gap:'10px',marginTop:'18px'}}>
             <button className={styles.btnExport} style={{flex:1}}
-              onClick={()=>{onExport(months[rStart], months[rEnd]); onClose()}}>
-              ↓ Export {fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}
+              onClick={()=>{onExport(months[rStart], months[rEnd], mode); onClose()}}>
+              ↓ Export {mode==='BELI'?'Beli':'Jual'} NKL {fmtMonth(months[rStart])} — {fmtMonth(months[rEnd])}
             </button>
             <button className={styles.btnReupload}
-              onClick={()=>{onExport(null, null); onClose()}}>
+              onClick={()=>{onExport(null, null, mode); onClose()}}>
               Semua Periode
             </button>
           </div>
@@ -1103,22 +1114,28 @@ export default function Home() {
   // Export flat: semua transaksi Beli NKL.
   // Jika kartu stok gudang 2 diupload: tambah Qty Sebelum, Qty Gudang Lain, TOTAL,
   // dan flag Wajib SO (aturan a: stok gabungan SEBELUM masuk < 500).
-  const exportBeliNklFlat=async(mFrom=null,mTo=null)=>{
+  const exportBeliNklFlat=async(mFrom=null,mTo=null,mode='BELI')=>{
     if(!data)return
     const XLSX=await import('xlsx')
     const sources=[{items:data,label:fileName||'Gudang 1'}]
     if(data2)sources.push({items:data2,label:fileName2||'Gudang 2'})
     const tlMaps=data2?[buildSaldoTimeline(data),buildSaldoTimeline(data2)]:null
     const monthKeyOf=(tgl)=>{const p=tgl.split('/');return p.length>=3?`${p[2]}-${p[1]}`:''}
+    const isJualKeluar=(t)=>t.out>0&&(t.jenisTrs||'').toLowerCase().includes('jual')
 
     const flat=[]
     sources.forEach((src,si)=>{
       for(const item of src.items){
         for(const t of item.transactions){
-          if(!t.isBeliNkl)continue
+          if(mode==='BELI'){if(!t.isBeliNkl)continue}
+          else{if(!isJualKeluar(t))continue}
           if(mFrom&&mTo){const mk=monthKeyOf(t.tglPO);if(mk<mFrom||mk>mTo)continue}
           const admRaw=t.admUser&&t.admTanggal?`${t.admUser}-${t.admTanggal.replace('/','')}`:t.admUser||''
-          const sebelum=(t.saldo!=null)?t.saldo-(t.in||0):null
+          // BELI: qty relevan = stok SEBELUM masuk (saldo - IN)
+          // JUAL: qty relevan = stok SETELAH keluar (saldo)
+          const sebelum=(t.saldo!=null)?(mode==='BELI'?t.saldo-(t.in||0):t.saldo+(t.out||0)):null
+          const sesudah=t.saldo!=null?t.saldo:null
+          const basis=mode==='BELI'?sebelum:sesudah
           const row={
             'No':0,
             'Item':`${item.kodeBarang} ${item.deskripsi}  Unit: ${item.unit}`,
@@ -1137,15 +1154,18 @@ export default function Home() {
             'User ADM':t.admUser||'',
             'Tgl Input':t.admTanggal||'',
             'Qty Sebelum':sebelum!=null?sebelum:'',
+            'Qty Sesudah':sesudah!=null?sesudah:'',
           }
           if(data2){
             const other=qtyAsOf(tlMaps[1-si],item.kodeBarang,t.tglPO)
-            const total=(sebelum!=null?sebelum:0)+(other!=null?other:0)
+            const total=(basis!=null?basis:0)+(other!=null?other:0)
             row['Gudang']=src.label
             row['Qty Gudang Lain']=other!=null?other:0
             row['TOTAL']=total
             row['Wajib SO (<500)']=total<500?'YA':'Tidak'
             row.__total=total
+          }else{
+            row['Wajib SO (<500)']=(basis!=null&&basis<500)?'YA':'Tidak'
           }
           flat.push(row)
         }
@@ -1159,8 +1179,9 @@ export default function Home() {
     const ws=XLSX.utils.json_to_sheet(flat)
     ws['!cols']=[{wch:5},{wch:46},{wch:15},{wch:11},{wch:9},{wch:20},{wch:9},{wch:10},{wch:20},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:9},{wch:9},{wch:11},{wch:20},{wch:14},{wch:8},{wch:14}]
     const wb=XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb,ws,'Beli NKL')
-    XLSX.writeFile(wb,`beli_nkl_${Date.now()}.xlsx`)
+    const sheetName=mode==='BELI'?'Beli NKL':'Jual NKL'
+    XLSX.utils.book_append_sheet(wb,ws,sheetName)
+    XLSX.writeFile(wb,`${mode==='BELI'?'beli':'jual'}_nkl_${Date.now()}.xlsx`)
   }
 
   const lambatRows=data?getBeliNklLambat(data):[]
@@ -1169,7 +1190,7 @@ export default function Home() {
   const beliMonths=(()=>{
     if(!data)return[]
     const s=new Set()
-    const collect=(items)=>{for(const it of items)for(const t of it.transactions){if(t.isBeliNkl){const p=t.tglPO.split('/');if(p.length>=3)s.add(`${p[2]}-${p[1]}`)}}}
+    const collect=(items)=>{for(const it of items)for(const t of it.transactions){const isJual=t.out>0&&(t.jenisTrs||'').toLowerCase().includes('jual');if(t.isBeliNkl||isJual){const p=t.tglPO.split('/');if(p.length>=3)s.add(`${p[2]}-${p[1]}`)}}}
     collect(data);if(data2)collect(data2)
     return[...s].sort()
   })()
@@ -1207,7 +1228,7 @@ export default function Home() {
               {adjAnalysis.length>0&&<button className={styles.btnAdj} onClick={()=>setShowAdj(true)}>🔍 ADJ vs BPB/R.j {adjNoMatch.length>0&&`(${adjNoMatch.length} ⚠)`}</button>}
               {bpbRjRows.length>0&&<button className={styles.btnBpbRj} onClick={()=>setShowBpbRj(true)}>📦 BPB/R.j ({bpbRjRows.length})</button>}
               {lambatRows.length>0&&<button className={styles.btnLambat} onClick={()=>setShowLambat(true)}>⚠ Input Lambat ({lambatRows.length})</button>}
-              <button className={styles.btnExportAlt} onClick={()=>setShowBeliExport(true)}>↓ Beli NKL</button>
+              <button className={styles.btnExportAlt} onClick={()=>setShowBeliExport(true)}>↓ Beli/Jual NKL</button>
               <button className={styles.btnExport} onClick={exportExcel}>↓ Export Excel</button>
             </>}
           </div>

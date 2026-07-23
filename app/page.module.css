@@ -343,3 +343,10 @@
 
 .btnFile2 { background: transparent; border: 1px dashed var(--warn); border-radius: 4px; color: var(--warn); font-family: var(--font-mono); font-size: 12px; padding: 5px 12px; cursor: pointer; transition: all 0.15s; }
 .btnFile2:hover { background: rgba(255,171,64,0.08); }
+
+/* Export mode toggle */
+.modeToggle { display: flex; gap: 8px; margin-bottom: 16px; }
+.modeBtn { flex: 1; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; color: var(--text2); font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 12px; cursor: pointer; transition: all 0.15s; text-align: left; display: flex; flex-direction: column; gap: 4px; }
+.modeBtn:hover { border-color: var(--accent); }
+.modeBtnActive { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+.modeBtnSub { font-size: 9px; font-weight: 400; color: var(--text3); line-height: 1.4; }
